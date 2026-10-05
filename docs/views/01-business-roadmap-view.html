@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Business Strategy & Phased Roadmap · Monocular Spatial Vision</title>
+  <style>
+    :root {
+      --bg-base: #0c0f17;
+      --bg-surface: #141926;
+      --bg-surface-elevated: #1c2336;
+      --bg-surface-hover: #232c44;
+      --border-subtle: #242e47;
+      --border-strong: #364366;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.18);
+      --accent-hover: #7dd3fc;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --tag-bg: rgba(56, 189, 248, 0.1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --success: #059669;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --tag-bg: rgba(2, 132, 199, 0.08);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Math Formula Typography */
+    .math-expr {
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", Georgia, serif;
+      font-style: normal;
+      color: var(--accent);
+      padding: 0 0.15rem;
+      white-space: nowrap;
+    }
+    .math-formula-box {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1.25rem;
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", Georgia, serif;
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      overflow-x: auto;
+    }
+    .math-frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 0.25rem;
+      font-size: 0.95em;
+    }
+    .math-num {
+      border-bottom: 1.5px solid currentColor;
+      padding-bottom: 2px;
+      line-height: 1.2;
+    }
+    .math-den {
+      padding-top: 2px;
+      line-height: 1.2;
+    }
+    .math-var {
+      font-style: italic;
+      font-family: "Cambria Math", Georgia, serif;
+      padding: 0 0.05rem;
+    }
+    .math-sub {
+      font-size: 0.75em;
+      vertical-align: sub;
+      font-style: normal;
+    }
+    .math-sup {
+      font-size: 0.75em;
+      vertical-align: super;
+      font-style: normal;
+    }
+    .math-op {
+      margin: 0 0.25rem;
+      color: var(--text-muted);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: var(--tag-bg);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      width: 100%;
+    }
+
+    .header-hero {
+      margin-bottom: 2.5rem;
+    }
+    .header-hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .header-hero h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .header-hero p {
+      color: var(--text-muted);
+      max-width: 850px;
+      font-size: 1.05rem;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+    .stat-code {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+      display: block;
+      font-weight: 600;
+    }
+    .stat-value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-desc {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 1.2rem;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    /* Roadmap Timeline */
+    .timeline-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .phase-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    @media (max-width: 900px) {
+      .phase-nav { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 500px) {
+      .phase-nav { grid-template-columns: 1fr; }
+    }
+    .phase-btn {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      padding: 1rem;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .phase-btn:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--border-strong);
+    }
+    .phase-btn.active {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .phase-badge {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+      display: block;
+    }
+    .phase-btn.active .phase-badge {
+      color: var(--accent);
+    }
+    .phase-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-main);
+    }
+
+    .phase-content-card {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 2rem;
+      display: none;
+    }
+    .phase-content-card.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .phase-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 1rem;
+      flex-wrap: gap;
+      gap: 1rem;
+    }
+    .phase-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+    }
+    .tag-active { background: rgba(52, 211, 153, 0.15); color: var(--success); border: 1px solid var(--success); }
+    .tag-upcoming { background: rgba(251, 191, 36, 0.15); color: var(--warning); border: 1px solid var(--warning); }
+    .tag-planned { background: rgba(148, 163, 184, 0.15); color: var(--text-dim); border: 1px solid var(--border-subtle); }
+
+    .phase-details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 768px) {
+      .phase-details-grid { grid-template-columns: 1fr; }
+    }
+    .detail-box h4 {
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .detail-box ul {
+      list-style-type: none;
+    }
+    .detail-box li {
+      position: relative;
+      padding-left: 1.25rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .detail-box li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    /* RACI Matrix */
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 3rem;
+      overflow-x: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      background: var(--bg-surface-elevated);
+    }
+    tr:last-child td { border-bottom: none; }
+    .raci-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.75rem;
+    }
+    .raci-a { background: rgba(248, 113, 113, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    .raci-r { background: rgba(56, 189, 248, 0.2); color: var(--accent); border: 1px solid var(--accent); }
+    .raci-c { background: rgba(251, 191, 36, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+    .raci-i { background: rgba(148, 163, 184, 0.2); color: var(--text-dim); border: 1px solid var(--text-dim); }
+
+    /* Glossary Search */
+    .glossary-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .search-box {
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+    .search-input {
+      width: 100%;
+      padding: 0.75rem 1rem 0.75rem 2.5rem;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+    .search-icon {
+      position: absolute;
+      left: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    .glossary-card {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      transition: all 0.2s;
+    }
+    .glossary-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+    .glossary-term {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .glossary-en {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+    .glossary-def {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">Business Layer</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link active">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="header-hero">
+      <div class="eyebrow">Strategic Requirements & Phased Horizons</div>
+      <h1>Kế Hoạch Nghiệp Vụ & Lộ Trình Phát Triển Hệ Thống</h1>
+      <p>Tổng hợp Business Requirement Document (BRD), mục tiêu chiến lược, các chỉ số thành công (KPI), lộ trình phân kỳ 4 giai đoạn, ma trận trách nhiệm RACI và bảng thuật ngữ lĩnh vực nhận thức thị giác 3D.</p>
+    </header>
+
+    <!-- KPI / Objective Cards -->
+    <h2 class="section-title">Chỉ Số Hiệu Năng & Mục Tiêu Cốt Lõi (BRD KPIs)</h2>
+    <div class="card-grid">
+      <div class="stat-card">
+        <span class="stat-code">KPI-01 · GROUND DISTANCE ERROR</span>
+        <div class="stat-value" style="color: var(--success);">&le; 5.0%</div>
+        <p class="stat-desc">Sai số tương đối tuyệt đối (AbsRel) tại dải cự ly <span class="math-expr">0.5 m &ndash; 3.0 m</span> đối chiếu thước laser Bosch quang học.</p>
+      </div>
+      <div class="stat-card">
+        <span class="stat-code">KPI-02 · METRIC DEPTH UNANCHORED</span>
+        <div class="stat-value" style="color: var(--accent);">&le; 10.0%</div>
+        <p class="stat-desc">Độ chính xác đo cự ly vật cản lơ lửng bằng mạng Depth Anything V2 Metric neo tỷ lệ mặt sàn.</p>
+      </div>
+      <div class="stat-card">
+        <span class="stat-code">KPI-03 · INFERENCE THROUGHPUT</span>
+        <div class="stat-value" style="color: var(--accent);">&ge; 25 FPS</div>
+        <p class="stat-desc">Độ trễ suy luận AI biên trên Jetson AGX Xavier <span class="math-expr">&le; 40 ms</span>/frame tối ưu hóa qua TensorRT FP16.</p>
+      </div>
+      <div class="stat-card">
+        <span class="stat-code">KPI-04 · DYNAMIC TILT IMMUNITY</span>
+        <div class="stat-value" style="color: var(--warning);">&ge; 40%</div>
+        <p class="stat-desc">Giảm phương sai sai số đo cự ly (<span class="math-expr"><i>&sigma;</i><sub><i>Z</i></sub><sup>2</sup></span>) nhờ bù trừ vector trọng lực gia tốc kế IMU MPU6050.</p>
+      </div>
+    </div>
+
+    <!-- Phased Roadmap Timeline -->
+    <h2 class="section-title">Lộ Trình Phân Kỳ 4 Giai Đoạn (Phased Roadmap)</h2>
+    <div class="timeline-container">
+      <div class="phase-nav">
+        <button class="phase-btn active" data-phase="p1">
+          <span class="phase-badge">GIAI ĐOẠN 1 (HIỆN TẠI)</span>
+          <div class="phase-name">Standalone Sandbox</div>
+        </button>
+        <button class="phase-btn" data-phase="p2">
+          <span class="phase-badge">GIAI ĐOẠN 2</span>
+          <div class="phase-name">Depth Strategy Selection</div>
+        </button>
+        <button class="phase-btn" data-phase="p3">
+          <span class="phase-badge">GIAI ĐOẠN 3</span>
+          <div class="phase-name">Sensor Fusion (LiDAR)</div>
+        </button>
+        <button class="phase-btn" data-phase="p4">
+          <span class="phase-badge">GIAI ĐOẠN 4</span>
+          <div class="phase-name">Nav2 3D Tracking</div>
+        </button>
+      </div>
+
+      <!-- Phase 1 Content -->
+      <div class="phase-content-card active" id="content-p1">
+        <div class="phase-header">
+          <div>
+            <h3>Phase 1: Standalone Research Sandbox (Release 1)</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Kiểm chứng giả thuyết toán học và mô hình AI có sẵn trọng số trên giá đỡ cơ khí tĩnh.</p>
+          </div>
+          <span class="phase-tag tag-active">ĐANG THỰC HIỆN</span>
+        </div>
+        <div class="phase-details-grid">
+          <div class="detail-box">
+            <h4>Năng Lực Trọng Tâm</h4>
+            <ul>
+              <li>Thu nhận luồng ảnh 1280x720 @ 30 FPS từ Pcam 5C qua Raspberry Pi 3.</li>
+              <li>Đọc gia tốc trọng trường từ MPU6050 bù góc pitch tức thời <span class="math-expr"><i>&theta;</i>(<i>t</i>)</span>.</li>
+              <li>Phân đoạn tiếp xúc sàn (YOLOv8-seg) + ước lượng khoảng cách sàn (IPM).</li>
+              <li>Đo đối chuẩn độc lập với thước đo laser Bosch GLM (<span class="math-expr">&plusmn; 1.5 mm</span>).</li>
+            </ul>
+          </div>
+          <div class="detail-box">
+            <h4>Điều Kiện Nghiệm Thu (Exit Gate)</h4>
+            <ul>
+              <li>Tỉ lệ rớt khung hình (Packet Drop Rate) qua Ethernet LAN <span class="math-expr">&lt; 0.1%</span>.</li>
+              <li>Sai số AbsRel cự ly tiếp xúc sàn <span class="math-expr">&le; 5.0%</span> trong cự ly <span class="math-expr">0.5 m &ndash; 3.0 m</span>.</li>
+              <li>Tổng độ trễ từ cảm biến tới 3D BBox <span class="math-expr">&le; 60 ms</span> (<span class="math-expr">&ge; 16.6 FPS</span>).</li>
+              <li>Khử rung lắc giá đỡ: độ lệch cự ly tăng không quá <span class="math-expr">1%</span> khi nghiêng <span class="math-expr">&plusmn; 5&deg;</span>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 2 Content -->
+      <div class="phase-content-card" id="content-p2">
+        <div class="phase-header">
+          <div>
+            <h3>Phase 2: Metric Depth Strategy Evaluation</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Thực nghiệm so sánh 3 ứng viên đo sâu đơn mắt: Motion Stereo, Metric Depth Net và LiDAR Projection.</p>
+          </div>
+          <span class="phase-tag tag-upcoming">KẾ HOẠCH TIẾP THEO</span>
+        </div>
+        <div class="phase-details-grid">
+          <div class="detail-box">
+            <h4>Năng Lực Trọng Tâm</h4>
+            <ul>
+              <li>Motion Stereo: Tận dụng chuyển động tịnh tiến robot làm baseline ảo thời gian.</li>
+              <li>Foundation Model: Chạy Depth Anything V2 Metric neo tỷ lệ mặt sàn.</li>
+              <li>LiDAR Fusion: Chiếu chùm tia quét 2D RPLIDAR S2E lên mặt phẳng ảnh.</li>
+              <li>Đo đạc công suất GPU VRAM và độ trễ từng phương án trên Jetson AGX.</li>
+            </ul>
+          </div>
+          <div class="detail-box">
+            <h4>Điều Kiện Nghiệm Thu (Exit Gate)</h4>
+            <ul>
+              <li>Hoàn thành ma trận đối sánh thực nghiệm trên tập mẫu kiểm thử chuẩn lab.</li>
+              <li>Thông qua quyết định kiến trúc chính thức (ADR-002) chốt phương án đo sâu.</li>
+              <li>Giải quyết triệt để bài toán Scale Ambiguity đối với vật cản không chạm sàn.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 3 Content -->
+      <div class="phase-content-card" id="content-p3">
+        <div class="phase-header">
+          <div>
+            <h3>Phase 3: Multi-Sensor Fusion & Robot System Integration</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Tích hợp module camera đơn vào khung gầm Mobile Robot đang vận hành ROS 2 Foxy.</p>
+          </div>
+          <span class="phase-tag tag-planned">DỰ KIẾN</span>
+        </div>
+        <div class="phase-details-grid">
+          <div class="detail-box">
+            <h4>Năng Lực Trọng Tâm</h4>
+            <ul>
+              <li>Đóng gói package ROS 2 hoàn chỉnh (`mono_perception`) trên FastDDS.</li>
+              <li>Đồng bộ hóa nhịp thời gian qua `message_filters::ApproximateTime` giữa Ảnh và Odometry.</li>
+              <li>Bộ lọc Kalman mở rộng (EKF) triệt tiêu rung chấn gầm xe khi chạy trên gờ mấp mô.</li>
+              <li>Chuyển đổi tọa độ liên tục theo TF Tree: <code>camera_optical</code> &rarr; <code>base_footprint</code> &rarr; <code>map</code>.</li>
+            </ul>
+          </div>
+          <div class="detail-box">
+            <h4>Điều Kiện Nghiệm Thu (Exit Gate)</h4>
+            <ul>
+              <li>Hệ thống vận hành trơn tru ở tốc độ di chuyển tối đa của robot (<span class="math-expr">0.4 m/s</span>).</li>
+              <li>Tọa độ vật thể trong hệ quy chiếu bản đồ `map` không bị giật khi robot xoay thân.</li>
+              <li>Không rớt gói tin FastDDS trong môi trường mạng WiFi phòng thí nghiệm.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 4 Content -->
+      <div class="phase-content-card" id="content-p4">
+        <div class="phase-header">
+          <div>
+            <h3>Phase 4: 3D Obstacle Tracking & Nav2 Costmap</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Theo dõi vật cản 3D theo thời gian thực và nạp dữ liệu vào bản đồ chi phí điều hướng tự động.</p>
+          </div>
+          <span class="phase-tag tag-planned">DỰ KIẾN</span>
+        </div>
+        <div class="phase-details-grid">
+          <div class="detail-box">
+            <h4>Năng Lực Trọng Tâm</h4>
+            <ul>
+              <li>Theo dõi vết đa đối tượng 3D (ByteTrack-3D / Kalman Tracker).</li>
+              <li>Chuyển đổi hộp bao 3D thành Spatio-Temporal Costmap Layer cho Nav2.</li>
+              <li>Thuật toán lập kế hoạch tránh né vật cản lơ lửng (mép bàn nhô ra ngoài tầm LiDAR).</li>
+              <li>Giao diện Web 3D hiển thị toàn cảnh chướng ngại vật cho người vận hành.</li>
+            </ul>
+          </div>
+          <div class="detail-box">
+            <h4>Điều Kiện Nghiệm Thu (Exit Gate)</h4>
+            <ul>
+              <li>Robot tự hành vượt qua mê cung có vật cản thấp và vật cản treo tránh 100% va chạm.</li>
+              <li>Tỷ lệ mất vết đối tượng (ID Switch) <span class="math-expr">&lt; 5%</span> khi bị che khuất cục bộ ngắn hạn.</li>
+              <li>Thời gian phản ứng phanh khẩn cấp của Nav2 <span class="math-expr">&le; 200 ms</span> khi xuất hiện vật cản bất ngờ.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stakeholder RACI Matrix -->
+    <h2 class="section-title">Ma Trận Trách Nhiệm Stakeholders (RACI Matrix)</h2>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Hạng Mục Trách Nhiệm</th>
+            <th>Lab Director</th>
+            <th>Tech Lead</th>
+            <th>AI Engineer</th>
+            <th>Embedded Eng.</th>
+            <th>Benchmark QA</th>
+            <th>AI Coding Agent</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Định hướng nghiên cứu & Phê duyệt KPI</strong></td>
+            <td><span class="raci-badge raci-a">A</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-i">I</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+          </tr>
+          <tr>
+            <td><strong>Bảo vệ Bất biến Kiến trúc (ADR & Architecture)</strong></td>
+            <td><span class="raci-badge raci-i">I</span></td>
+            <td><span class="raci-badge raci-a">A</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+          </tr>
+          <tr>
+            <td><strong>Phát triển Driver V4L2 & Socket Stream Pi 3</strong></td>
+            <td><span class="raci-badge raci-i">I</span></td>
+            <td><span class="raci-badge raci-a">A</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+          </tr>
+          <tr>
+            <td><strong>Pipeline AI (YOLOv8-seg, IPM, Metric Depth)</strong></td>
+            <td><span class="raci-badge raci-i">I</span></td>
+            <td><span class="raci-badge raci-a">A</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+          </tr>
+          <tr>
+            <td><strong>Đo Đạc Ground Truth Thước Laser & Nghiệm Thu</strong></td>
+            <td><span class="raci-badge raci-a">A</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+            <td><span class="raci-badge raci-r">R</span></td>
+            <td><span class="raci-badge raci-c">C</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-dim); display: flex; gap: 1.5rem; flex-wrap: wrap;">
+        <span><strong style="color: var(--danger)">A</strong>: Accountable (Chịu trách nhiệm tối cao)</span>
+        <span><strong style="color: var(--accent)">R</strong>: Responsible (Chịu trách nhiệm thực thi)</span>
+        <span><strong style="color: var(--warning)">C</strong>: Consulted (Tham vấn chuyên môn)</span>
+        <span><strong style="color: var(--text-dim)">I</strong>: Informed (Nhận thông tin cập nhật)</span>
+      </div>
+    </div>
+
+    <!-- Ubiquitous Glossary Explorer -->
+    <h2 class="section-title">Thuật Ngữ Lĩnh Vực Nhận Thức 3D (Ubiquitous Glossary)</h2>
+    <div class="glossary-section">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="glossarySearch" placeholder="Tìm kiếm thuật ngữ (ví dụ: IPM, Metric Depth, Pcam 5C, AbsRel...)...">
+      </div>
+      <div class="glossary-grid" id="glossaryGrid">
+        <div class="glossary-card" data-term="monocular camera don">
+          <div class="glossary-term">Monocular Vision</div>
+          <span class="glossary-en">Camera đơn mắt</span>
+          <p class="glossary-def">Hệ thống thị giác chỉ sử dụng duy nhất một ống kính quang học, không có phép đo cự ly hình học lập thể trực tiếp.</p>
+        </div>
+        <div class="glossary-card" data-term="ipm inverse perspective mapping chieu phoi canh nguoc">
+          <div class="glossary-term">IPM (Inverse Perspective Mapping)</div>
+          <span class="glossary-en">Chiếu phối cảnh ngược</span>
+          <p class="glossary-def">Phép chiếu hình học từ mặt phẳng ảnh 2D xuống mặt phẳng sàn giả định để khôi phục khoảng cách thực Z tới chân tiếp xúc sàn.</p>
+        </div>
+        <div class="glossary-card" data-term="scale ambiguity mo ho ty le">
+          <div class="glossary-term">Scale Ambiguity</div>
+          <span class="glossary-en">Sự mơ hồ về tỉ lệ thước đo</span>
+          <p class="glossary-def">Bản chất của camera đơn: vật nhỏ ở gần và vật lớn ở xa có cùng kích thước chiếu trên cảm biến nếu không có neo tỷ lệ tham chiếu.</p>
+        </div>
+        <div class="glossary-card" data-term="metric depth do sau he met">
+          <div class="glossary-term">Metric Depth</div>
+          <span class="glossary-en">Bản đồ độ sâu hệ mét tuyệt đối</span>
+          <p class="glossary-def">Khoảng cách thực có đơn vị vật lý (mét) từ quang tâm camera tới từng bề mặt vật thể trong không gian 3D.</p>
+        </div>
+        <div class="glossary-card" data-term="ground contact point diem tiep xuc san">
+          <div class="glossary-term">Ground Contact Point</div>
+          <span class="glossary-en">Điểm tiếp xúc mặt sàn</span>
+          <p class="glossary-def">Tọa độ pixel thấp nhất của vật thể tiếp xúc với mặt sàn phẳng, được trích xuất từ mặt nạ phân đoạn 2D để đưa vào IPM.</p>
+        </div>
+        <div class="glossary-card" data-term="3d bounding box hop bao 3d">
+          <div class="glossary-term">3D Bounding Box</div>
+          <span class="glossary-en">Hộp bao không gian ba chiều</span>
+          <p class="glossary-def">Khối lập phương không gian xác định bởi tâm [X, Y, Z], kích thước [L, W, H] và góc quay yaw bao trùm vật thể thực tế.</p>
+        </div>
+        <div class="glossary-card" data-term="pcam 5c ov5640 digilent">
+          <div class="glossary-term">Digilent Pcam 5C</div>
+          <span class="glossary-en">Cảm biến OmniVision OV5640 5MP</span>
+          <p class="glossary-def">Module camera công nghiệp kết nối giao tiếp MIPI CSI-2 15 chân nối với Raspberry Pi 3 làm bộ thu nhận quang học.</p>
+        </div>
+        <div class="glossary-card" data-term="absrel sai so tuong doi tuyet doi">
+          <div class="glossary-term">AbsRel (Absolute Relative Error)</div>
+          <span class="glossary-en">Sai số tương đối tuyệt đối</span>
+          <p class="glossary-def">Chỉ số đánh giá độ chính xác đo cự ly trung bình: 
+            <span class="math-formula-box" style="display: inline-flex; vertical-align: middle; padding: 2px 8px; margin: 0 4px;">
+              <span class="math-frac">
+                <span class="math-num">1</span>
+                <span class="math-den"><i>N</i></span>
+              </span>
+              <span class="math-op">&sum;</span>
+              <span class="math-frac">
+                <span class="math-num">|<i>d</i><sub>pred</sub> &minus; <i>d</i><sub>gt</sub>|</span>
+                <span class="math-den"><i>d</i><sub>gt</sub></span>
+              </span>
+            </span>, ngưỡng đạt chuẩn <span class="math-expr">&le; 5%</span>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+    });
+
+    // Phase Timeline Switcher
+    const phaseBtns = document.querySelectorAll('.phase-btn');
+    const phaseCards = document.querySelectorAll('.phase-content-card');
+
+    phaseBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        phaseBtns.forEach(b => b.classList.remove('active'));
+        phaseCards.forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const phaseId = btn.getAttribute('data-phase');
+        const targetCard = document.getElementById(`content-${phaseId}`);
+        if (targetCard) targetCard.classList.add('active');
+      });
+    });
+
+    // Glossary Search Filter
+    const searchInput = document.getElementById('glossarySearch');
+    const cards = document.querySelectorAll('.glossary-card');
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      cards.forEach(card => {
+        const text = (card.getAttribute('data-term') + ' ' + card.innerText).toLowerCase();
+        if (text.includes(query)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

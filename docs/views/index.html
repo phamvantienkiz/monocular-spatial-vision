@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monocular Spatial Vision · Architectural & Research Views Portal</title>
+  <style>
+    :root {
+      --bg-base: #080b12;
+      --bg-surface: #101624;
+      --bg-surface-elevated: #182236;
+      --bg-surface-hover: #222e47;
+      --border-subtle: #212d45;
+      --border-strong: #334366;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.16);
+      --accent-hover: #7dd3fc;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --purple: #c084fc;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --purple: #9333ea;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1350px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      width: 100%;
+    }
+
+    .hero-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(192, 132, 252, 0.05) 100%);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 2rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+      font-weight: 700;
+    }
+    .hero-banner h1 {
+      font-size: clamp(1.8rem, 3vw + 1rem, 2.7rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+    }
+    .hero-banner p {
+      color: var(--text-muted);
+      max-width: 880px;
+      font-size: 1.05rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Search & Filter Bar */
+    .search-filter-bar {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .search-wrapper {
+      position: relative;
+      flex: 1;
+      min-width: 280px;
+    }
+    .search-input {
+      width: 100%;
+      padding: 0.75rem 1rem 0.75rem 2.5rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .search-icon {
+      position: absolute;
+      left: 0.85rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+    }
+    .filter-tags {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      background: var(--accent);
+      color: #000000;
+      border-color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* Stat Banner */
+    .stat-banner {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    .stat-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      margin-bottom: 0.2rem;
+    }
+    .stat-lbl {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Views Catalog Grid */
+    .views-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+    .view-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+    }
+    .view-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+    }
+    .card-top {
+      margin-bottom: 1.25rem;
+    }
+    .card-tag-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .card-tag {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+    }
+    .tag-biz { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .tag-arch { background: rgba(192, 132, 252, 0.15); color: var(--purple); }
+    .tag-ai { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
+    .tag-rep { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+    .tag-hud { background: rgba(244, 63, 94, 0.15); color: var(--danger); }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 0.5rem;
+      line-height: 1.3;
+    }
+    .card-desc {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+    .card-bullets {
+      list-style-type: none;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+    .card-bullets li {
+      padding-left: 1.2rem;
+      position: relative;
+      margin-bottom: 0.35rem;
+    }
+    .card-bullets li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+    .card-sources {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      padding: 0.5rem 0.75rem;
+      background: var(--bg-surface-elevated);
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.25rem;
+    }
+    .card-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--accent);
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .card-action-btn:hover {
+      background: var(--accent);
+      color: #000000;
+      border-color: var(--accent);
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">Master Portal</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link active">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <div class="hero-banner">
+      <div class="eyebrow">Interactive Architectural & Research Explorer</div>
+      <h1>Cổng Trực Quan Hóa Toàn Diện Kiến Trúc & Nghiên Cứu</h1>
+      <p>Hệ thống khám phá trực quan độc lập (Standalone Visual Suite) kết hợp các bản vẽ kiến trúc tương tác, bộ mô phỏng hình học chiếu ngược IPM, ma trận phân rã cổng quyết định RQ và nguyên mẫu giao diện giám sát telemetry thời gian thực.</p>
+      
+      <div class="search-filter-bar">
+        <div class="search-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="globalSearch" placeholder="Tìm kiếm tài liệu, sơ đồ, thuật toán (nhấn '/' để tìm)...">
+        </div>
+        <div class="filter-tags">
+          <button class="filter-btn active" data-filter="all">Tất Cả (5 Views)</button>
+          <button class="filter-btn" data-filter="biz">Business</button>
+          <button class="filter-btn" data-filter="arch">Architecture</button>
+          <button class="filter-btn" data-filter="ai">AI & Geometry</button>
+          <button class="filter-btn" data-filter="rep">Research Reports</button>
+          <button class="filter-btn" data-filter="hud">HUD Prototype</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Banner -->
+    <div class="stat-banner">
+      <div class="stat-item">
+        <div class="stat-num">4</div>
+        <div class="stat-lbl">Business Objectives</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">14</div>
+        <div class="stat-lbl">System Invariants</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">6</div>
+        <div class="stat-lbl">RQ Decision Gates</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">4</div>
+        <div class="stat-lbl">Scientific Hypotheses</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">&le; 5.0%</div>
+        <div class="stat-lbl">Target AbsRel Error</div>
+      </div>
+    </div>
+
+    <!-- Specialized Views Grid -->
+    <div class="views-grid" id="viewsGrid">
+      
+      <!-- Card 1: Business & Roadmap -->
+      <div class="view-card" data-category="biz">
+        <div class="card-top">
+          <div class="card-tag-row">
+            <span class="card-tag tag-biz">Business Layer</span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">html-plan</span>
+          </div>
+          <h2 class="card-title">01. Chiến Lược Nghiệp Vụ & Lộ Trình Phân Kỳ 4 Giai Đoạn</h2>
+          <p class="card-desc">Bản đồ kế hoạch chiến lược phân kỳ từ Standalone Sandbox đến tự hành Nav2, ma trận phân quyền RACI và bộ thuật ngữ chuẩn.</p>
+          <ul class="card-bullets">
+            <li>Kế hoạch 4 Milestone: Sandbox &rarr; Depth &rarr; Fusion &rarr; Nav2</li>
+            <li>Ma trận trách nhiệm RACI cho 6 nhóm Stakeholders</li>
+            <li>Bảng tra cứu thuật ngữ Ubiquitous Glossary tương tác</li>
+          </ul>
+          <div class="card-sources">
+            Nguồn: docs/business/{brd.md, roadmap.md, glossary.md, stakeholders.md}
+          </div>
+        </div>
+        <a href="01-business-roadmap-view.html" class="card-action-btn">Mở View Lộ Trình & Nghiệp Vụ &rarr;</a>
+      </div>
+
+      <!-- Card 2: System Architecture -->
+      <div class="view-card" data-category="arch">
+        <div class="card-top">
+          <div class="card-tag-row">
+            <span class="card-tag tag-arch">Architecture Layer</span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">html-diagram</span>
+          </div>
+          <h2 class="card-title">02. Topo Hệ Thống & Bộ Soi Gói Tin Nhị Phân 36-Byte</h2>
+          <p class="card-desc">Sơ đồ tương tác 3 khối phần cứng, thanh tra cấu trúc nhị phân Frame Header, danh mục ROS 2 FastDDS và quyết định ADR-001.</p>
+          <ul class="card-bullets">
+            <li>Sơ đồ Topo tương tác click để xem chi tiết từng Node</li>
+            <li>Bộ soi byte nhị phân Binary Frame Header (Big-Endian)</li>
+            <li>Đặc tả ROS 2 Topic & QoS và phân tích đánh đổi ADR-001</li>
+          </ul>
+          <div class="card-sources">
+            Nguồn: docs/architecture/{01..05, 07..10, adr/ADR-001.md}
+          </div>
+        </div>
+        <a href="02-system-architecture-view.html" class="card-action-btn">Mở View Kiến Trúc Hệ Thống &rarr;</a>
+      </div>
+
+      <!-- Card 3: AI & Geometry Simulator -->
+      <div class="view-card" data-category="ai">
+        <div class="card-top">
+          <div class="card-tag-row">
+            <span class="card-tag tag-ai">Perception & Math</span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">html-diagram</span>
+          </div>
+          <h2 class="card-title">03. Pipeline AI & Bộ Mô Phỏng Hình Học IPM Thời Gian Thực</h2>
+          <p class="card-desc">Chuỗi xử lý 7 bước, thuật toán bù trừ rung chấn IMU MPU6050, và canvas dò tia chiếu phối cảnh ngược (Ray Tracing) tương tác.</p>
+          <ul class="card-bullets">
+            <li>Bộ thanh trượt tùy chỉnh hc, góc pitch, độ lệch tilt và pixel</li>
+            <li>Mô phỏng tia chiếu sàn Ray Tracing thời gian thực trên Canvas</li>
+            <li>Chứng minh công thức toán học và 4 giả thuyết khoa học H1-H4</li>
+          </ul>
+          <div class="card-sources">
+            Nguồn: docs/architecture/06-ai & docs/reports/{01, 02, 03, 04}
+          </div>
+        </div>
+        <a href="03-ai-perception-pipeline-view.html" class="card-action-btn">Mở Bộ Mô Phỏng Hình Học &rarr;</a>
+      </div>
+
+      <!-- Card 4: Research Synthesis -->
+      <div class="view-card" data-category="rep">
+        <div class="card-top">
+          <div class="card-tag-row">
+            <span class="card-tag tag-rep">Reports Layer</span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">design-artifact</span>
+          </div>
+          <h2 class="card-title">04. Tổng Hợp Báo Cáo Nghiên Cứu & Cổng Quyết Định RQ</h2>
+          <p class="card-desc">Tổng hợp 7 chuyên đề nghiên cứu tại phòng lab, ma trận đối sánh 3 ứng viên đo sâu và quy chuẩn đối chuẩn thước laser Bosch.</p>
+          <ul class="card-bullets">
+            <li>Khung câu hỏi tuần tự RQ0 đến RQ5 kèm cẩm nang khắc phục</li>
+            <li>Ma trận so sánh Motion Stereo vs Depth Net vs LiDAR Fusion</li>
+            <li>Giao thức đối chuẩn thước laser Bosch (&plusmn;1.5mm) kèm bảng sai số</li>
+          </ul>
+          <div class="card-sources">
+            Nguồn: docs/reports/{00_MASTER_PLAN .. 06_MONOCULAR_RQ}
+          </div>
+        </div>
+        <a href="04-research-synthesis-report-view.html" class="card-action-btn">Mở Báo Cáo Nghiên Cứu &rarr;</a>
+      </div>
+
+      <!-- Card 5: Operator HUD Prototype -->
+      <div class="view-card" data-category="hud">
+        <div class="card-top">
+          <div class="card-tag-row">
+            <span class="card-tag tag-hud">Interactive Prototype</span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);">html-prototype</span>
+          </div>
+          <h2 class="card-title">05. Giao Diện Giám Sát Telemetry HUD & Khung Dây 3D</h2>
+          <p class="card-desc">Nguyên mẫu giao diện vận hành trực tiếp, hiển thị khung nhìn camera 1280x720 với hộp bao 3D wireframe và radar BEV 2D.</p>
+          <ul class="card-bullets">
+            <li>Mô phỏng trực quan video feed kèm bật/tắt các lớp 2D, Mask, 3D Box</li>
+            <li>Bản đồ cực Bird's Eye View (BEV) radar quét vật cản tới 5 mét</li>
+            <li>Điều khiển thanh trượt Pitch/Roll và theo dõi biến đổi hộp bao 3D</li>
+          </ul>
+          <div class="card-sources">
+            Nguồn: docs/architecture/{11, 12, 13, 14} & docs/implementation/frontend
+          </div>
+        </div>
+        <a href="05-operator-hud-prototype-view.html" class="card-action-btn">Mở Prototype Telemetry HUD &rarr;</a>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Quick filter buttons
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const viewCards = document.querySelectorAll('.view-card');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+
+        viewCards.forEach(card => {
+          if (filter === 'all' || card.getAttribute('data-category') === filter) {
+            card.style.display = 'flex';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    // Global Search
+    const searchInput = document.getElementById('globalSearch');
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      viewCards.forEach(card => {
+        const text = card.innerText.toLowerCase();
+        card.style.display = text.includes(query) ? 'flex' : 'none';
+      });
+    });
+
+    // Keyboard shortcut '/' to search
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+  </script>
+</body>
+</html>

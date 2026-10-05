@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Operator Telemetry HUD & 3D Spatial Prototype · Monocular Spatial Vision</title>
+  <style>
+    :root {
+      --bg-base: #070a10;
+      --bg-surface: #0e131f;
+      --bg-surface-elevated: #161d2e;
+      --bg-surface-hover: #1e273d;
+      --border-subtle: #202b42;
+      --border-strong: #2e3e61;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.16);
+      --accent-hover: #7dd3fc;
+      --color-person: #f59e0b;
+      --color-chair: #3b82f6;
+      --color-table: #10b981;
+      --color-box: #ec4899;
+      --color-contact: #ef4444;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --color-person: #d97706;
+      --color-chair: #2563eb;
+      --color-table: #059669;
+      --color-box: #db2777;
+      --color-contact: #dc2626;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 3rem;
+      width: 100%;
+    }
+
+    .header-hero {
+      margin-bottom: 1.5rem;
+    }
+    .header-hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+    .header-hero h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Telemetry Status Bar */
+    .telemetry-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .telem-group {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .telem-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .telem-label {
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+    .telem-value {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      display: inline-block;
+    }
+
+    /* Dual Viewport Layout */
+    .viewport-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1100px) {
+      .viewport-grid { grid-template-columns: 1fr; }
+    }
+
+    .main-viewport {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-sm);
+    }
+    .viewport-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      padding: 0 0.5rem;
+    }
+    .viewport-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .layer-toggles {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .toggle-chip {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      padding: 0.25rem 0.6rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s;
+    }
+    .toggle-chip.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    #opticalCanvas {
+      width: 100%;
+      height: 480px;
+      background: #05080f;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* Side Column: BEV & Controls */
+    .side-viewport-col {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .bev-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+    #bevCanvas {
+      width: 100%;
+      height: 250px;
+      background: #05080f;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .controls-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .ctrl-slider-group {
+      margin-bottom: 1rem;
+    }
+    .ctrl-slider-group:last-child { margin-bottom: 0; }
+    .ctrl-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      margin-bottom: 0.25rem;
+    }
+    .ctrl-val {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--accent);
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* Object Inspector Drawer */
+    .object-list-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .obj-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .obj-card {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .obj-card:hover, .obj-card.active {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .obj-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .obj-name {
+      font-weight: 700;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .obj-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .obj-metric-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      margin-bottom: 0.25rem;
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">Operator HUD Prototype</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link active">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="header-hero">
+      <div class="eyebrow">Interactive Telemetry HUD · 3D Spatial Wireframe Simulator</div>
+      <h1>Mô Phỏng Trực Quan Giao Diện Vận Hành & Khung Dây 3D</h1>
+    </header>
+
+    <!-- Telemetry Bar -->
+    <div class="telemetry-bar">
+      <div class="telem-group">
+        <div class="telem-item">
+          <span class="status-dot"></span>
+          <span class="telem-label">STREAM:</span>
+          <span class="telem-value" style="color: #34d399;">ONLINE (TCP 9876)</span>
+        </div>
+        <div class="telem-item">
+          <span class="telem-label">FPS:</span>
+          <span class="telem-value" id="dispFps">29.8</span>
+        </div>
+        <div class="telem-item">
+          <span class="telem-label">LATENCY:</span>
+          <span class="telem-value" id="dispLatency">34.2 ms</span>
+        </div>
+        <div class="telem-item">
+          <span class="telem-label">PITCH (&theta;):</span>
+          <span class="telem-value" id="dispPitch">12.5°</span>
+        </div>
+        <div class="telem-item">
+          <span class="telem-label">ROLL (&phi;):</span>
+          <span class="telem-value" id="dispRoll">0.0°</span>
+        </div>
+      </div>
+      <div class="telem-item">
+        <span class="telem-label">ROS 2 DDS:</span>
+        <span class="telem-value" style="color: var(--accent);">ACTIVE (/objects_3d)</span>
+      </div>
+    </div>
+
+    <!-- Dual Viewport Grid -->
+    <div class="viewport-grid">
+      <!-- Main Optical Canvas -->
+      <div class="main-viewport">
+        <div class="viewport-header">
+          <div class="viewport-title">
+            <span>📷 FRONT OPTICAL FEED (1280 x 720)</span>
+          </div>
+          <div class="layer-toggles">
+            <button class="toggle-chip active" id="tog2D">2D BBox</button>
+            <button class="toggle-chip active" id="togMask">Masks</button>
+            <button class="toggle-chip active" id="togContact">Ground Dot</button>
+            <button class="toggle-chip active" id="tog3D">3D Wireframe</button>
+          </div>
+        </div>
+        <canvas id="opticalCanvas" width="960" height="480"></canvas>
+      </div>
+
+      <!-- Side Column: BEV & Controls -->
+      <div class="side-viewport-col">
+        <!-- Bird's Eye View (BEV) -->
+        <div class="bev-card">
+          <div class="viewport-header" style="padding: 0 0 0.5rem 0;">
+            <div class="viewport-title" style="font-size: 0.85rem;">
+              <span>🧭 BIRD'S EYE VIEW (BEV RADAR GRID)</span>
+            </div>
+          </div>
+          <canvas id="bevCanvas" width="350" height="250"></canvas>
+        </div>
+
+        <!-- Controls Card -->
+        <div class="controls-card">
+          <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--accent); margin-bottom: 0.75rem;">Điều Khiển Tư Thế Camera Giả Lập</h4>
+          
+          <div class="ctrl-slider-group">
+            <div class="ctrl-label-row">
+              <span style="color: var(--text-muted);">Góc chúc Pitch (&theta;):</span>
+              <span class="ctrl-val" id="ctrlPitchVal">12.5°</span>
+            </div>
+            <input type="range" id="ctrlPitch" min="5.0" max="25.0" step="0.5" value="12.5">
+          </div>
+
+          <div class="ctrl-slider-group">
+            <div class="ctrl-label-row">
+              <span style="color: var(--text-muted);">Góc nghiêng Roll (&phi;):</span>
+              <span class="ctrl-val" id="ctrlRollVal">0.0°</span>
+            </div>
+            <input type="range" id="ctrlRoll" min="-5.0" max="5.0" step="0.2" value="0.0">
+          </div>
+
+          <div class="ctrl-slider-group">
+            <div class="ctrl-label-row">
+              <span style="color: var(--text-muted);">Thước đo Laser Bosch Ground-Truth:</span>
+              <span class="ctrl-val" style="color: var(--success);" id="ctrlLaserVal">Active ±1.5mm</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detected 3D Objects Inspector -->
+    <div class="object-list-card">
+      <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--accent);">Danh Sách Vật Thể 3D Thời Gian Thực (Active 3D Entities)</h3>
+      <div class="obj-grid" id="objGrid">
+        <!-- Cards generated by JS -->
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+      render();
+    });
+
+    // Object Mock Database
+    let objects = [
+      { id: 1, name: "person", color: "#f59e0b", x: 0.25, z: 1.82, w: 0.50, h: 1.65, d: 0.40, conf: 0.94, v_contact: 620, u_contact: 480 },
+      { id: 2, name: "chair",  color: "#3b82f6", x: -0.85, z: 2.45, w: 0.55, h: 0.85, d: 0.50, conf: 0.88, v_contact: 530, u_contact: 240 },
+      { id: 3, name: "table",  color: "#10b981", x: 1.10, z: 3.10, w: 1.20, h: 0.75, d: 0.80, conf: 0.91, v_contact: 470, u_contact: 720 },
+      { id: 4, name: "box",    color: "#ec4899", x: -0.20, z: 1.15, w: 0.40, h: 0.35, d: 0.40, conf: 0.85, v_contact: 670, u_contact: 420 }
+    ];
+
+    // Layers State
+    let show2D = true;
+    let showMask = true;
+    let showContact = true;
+    let show3D = true;
+
+    document.getElementById('tog2D').onclick = function() { show2D = !show2D; this.classList.toggle('active', show2D); render(); };
+    document.getElementById('togMask').onclick = function() { showMask = !showMask; this.classList.toggle('active', showMask); render(); };
+    document.getElementById('togContact').onclick = function() { showContact = !showContact; this.classList.toggle('active', showContact); render(); };
+    document.getElementById('tog3D').onclick = function() { show3D = !show3D; this.classList.toggle('active', show3D); render(); };
+
+    // Tilt sliders
+    const ctrlPitch = document.getElementById('ctrlPitch');
+    const ctrlRoll = document.getElementById('ctrlRoll');
+    const ctrlPitchVal = document.getElementById('ctrlPitchVal');
+    const ctrlRollVal = document.getElementById('ctrlRollVal');
+    const dispPitch = document.getElementById('dispPitch');
+    const dispRoll = document.getElementById('dispRoll');
+
+    ctrlPitch.addEventListener('input', () => {
+      ctrlPitchVal.innerText = parseFloat(ctrlPitch.value).toFixed(1) + '°';
+      dispPitch.innerText = parseFloat(ctrlPitch.value).toFixed(1) + '°';
+      render();
+    });
+    ctrlRoll.addEventListener('input', () => {
+      ctrlRollVal.innerText = parseFloat(ctrlRoll.value).toFixed(1) + '°';
+      dispRoll.innerText = parseFloat(ctrlRoll.value).toFixed(1) + '°';
+      render();
+    });
+
+    const optCanvas = document.getElementById('opticalCanvas');
+    const optCtx = optCanvas.getContext('2d');
+    const bevCanvas = document.getElementById('bevCanvas');
+    const bevCtx = bevCanvas.getContext('2d');
+
+    function render() {
+      renderOptical();
+      renderBEV();
+      renderObjCards();
+    }
+
+    function renderOptical() {
+      optCtx.clearRect(0, 0, optCanvas.width, optCanvas.height);
+      const isDark = root.getAttribute('data-theme') !== 'light';
+
+      // Simulated indoor background with vanishing floor line
+      const pitchOffset = (parseFloat(ctrlPitch.value) - 12.5) * 6;
+      const rollRad = (parseFloat(ctrlRoll.value) * Math.PI) / 180;
+      const horizonY = 220 + pitchOffset;
+
+      optCtx.save();
+      optCtx.translate(optCanvas.width / 2, optCanvas.height / 2);
+      optCtx.rotate(rollRad);
+      optCtx.translate(-optCanvas.width / 2, -optCanvas.height / 2);
+
+      // Floor
+      const floorGrad = optCtx.createLinearGradient(0, horizonY, 0, optCanvas.height);
+      floorGrad.addColorStop(0, isDark ? '#111728' : '#e2e8f0');
+      floorGrad.addColorStop(1, isDark ? '#080c14' : '#cbd5e1');
+      optCtx.fillStyle = floorGrad;
+      optCtx.fillRect(0, horizonY, optCanvas.width, optCanvas.height - horizonY);
+
+      // Perspective Floor Grid Lines
+      optCtx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(2, 132, 199, 0.08)';
+      optCtx.lineWidth = 1;
+      for (let x = -200; x <= optCanvas.width + 200; x += 100) {
+        optCtx.beginPath();
+        optCtx.moveTo(optCanvas.width / 2, horizonY);
+        optCtx.lineTo(x, optCanvas.height);
+        optCtx.stroke();
+      }
+
+      // Render Objects
+      objects.forEach(obj => {
+        // Perspective box projection
+        const scale = 500 / (obj.z * 180);
+        const bx = (optCanvas.width / 2) + (obj.x * 220 * scale);
+        const by = obj.v_contact - (pitchOffset * 0.8);
+        const bw = obj.w * 260 * scale;
+        const bh = obj.h * 260 * scale;
+
+        // 1. Semi-transparent Mask
+        if (showMask) {
+          optCtx.fillStyle = obj.color + '33'; // 20% alpha
+          optCtx.fillRect(bx - bw/2, by - bh, bw, bh);
+        }
+
+        // 2. 2D Bounding Box
+        if (show2D) {
+          optCtx.strokeStyle = obj.color;
+          optCtx.lineWidth = 2;
+          optCtx.strokeRect(bx - bw/2, by - bh, bw, bh);
+
+          // Label
+          optCtx.fillStyle = 'rgba(0,0,0,0.7)';
+          optCtx.fillRect(bx - bw/2, by - bh - 20, bw, 20);
+          optCtx.fillStyle = '#ffffff';
+          optCtx.font = 'bold 11px ui-monospace, monospace';
+          optCtx.fillText(`${obj.name} ${(obj.conf * 100).toFixed(0)}%`, bx - bw/2 + 4, by - bh - 6);
+        }
+
+        // 3. Ground Contact Dot
+        if (showContact) {
+          optCtx.fillStyle = '#ef4444';
+          optCtx.beginPath();
+          optCtx.arc(bx, by, 5, 0, Math.PI * 2);
+          optCtx.fill();
+
+          optCtx.fillStyle = '#ef4444';
+          optCtx.font = 'bold 11px ui-monospace, monospace';
+          optCtx.fillText(`Z: ${obj.z.toFixed(2)}m`, bx + 8, by + 4);
+        }
+
+        // 4. 3D Wireframe Bounding Box
+        if (show3D) {
+          const depthOffset = (obj.d * 100 * scale);
+          const topY = by - bh;
+
+          // Bottom base (on ground) - Blue
+          optCtx.strokeStyle = '#3b82f6';
+          optCtx.lineWidth = 2;
+          optCtx.strokeRect(bx - bw/2, by - depthOffset/2, bw, depthOffset);
+
+          // Top base - Cyan
+          optCtx.strokeStyle = '#06b6d4';
+          optCtx.strokeRect(bx - bw/2, topY - depthOffset/2, bw, depthOffset);
+
+          // 4 Vertical Pillars - Dotted
+          optCtx.strokeStyle = 'rgba(255,255,255,0.4)';
+          optCtx.setLineDash([3, 3]);
+          [[bx - bw/2, by - depthOffset/2, topY - depthOffset/2],
+           [bx + bw/2, by - depthOffset/2, topY - depthOffset/2],
+           [bx - bw/2, by + depthOffset/2, topY + depthOffset/2],
+           [bx + bw/2, by + depthOffset/2, topY + depthOffset/2]].forEach(([px, py1, py2]) => {
+            optCtx.beginPath();
+            optCtx.moveTo(px, py1);
+            optCtx.lineTo(px, py2);
+            optCtx.stroke();
+          });
+          optCtx.setLineDash([]);
+        }
+      });
+
+      optCtx.restore();
+    }
+
+    function renderBEV() {
+      bevCtx.clearRect(0, 0, bevCanvas.width, bevCanvas.height);
+      const isDark = root.getAttribute('data-theme') !== 'light';
+
+      const originX = bevCanvas.width / 2;
+      const originY = bevCanvas.height - 25;
+      const scaleM = 45; // 45px per meter
+
+      // Range rings
+      bevCtx.strokeStyle = isDark ? '#1e293b' : '#e2e8f0';
+      bevCtx.lineWidth = 1;
+      [1, 2, 3, 4, 5].forEach(r => {
+        bevCtx.beginPath();
+        bevCtx.arc(originX, originY, r * scaleM, Math.PI, 0);
+        bevCtx.stroke();
+        bevCtx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+        bevCtx.font = '10px ui-monospace, monospace';
+        bevCtx.fillText(`${r}m`, originX + r * scaleM - 15, originY - 4);
+      });
+
+      // Camera Triangle
+      bevCtx.fillStyle = '#38bdf8';
+      bevCtx.beginPath();
+      bevCtx.moveTo(originX, originY - 10);
+      bevCtx.lineTo(originX - 7, originY);
+      bevCtx.lineTo(originX + 7, originY);
+      bevCtx.closePath();
+      bevCtx.fill();
+
+      // Plot Objects
+      objects.forEach(obj => {
+        const ox = originX + (obj.x * scaleM);
+        const oy = originY - (obj.z * scaleM);
+
+        bevCtx.fillStyle = obj.color;
+        bevCtx.beginPath();
+        bevCtx.arc(ox, oy, 6, 0, Math.PI * 2);
+        bevCtx.fill();
+
+        bevCtx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
+        bevCtx.font = 'bold 9px ui-monospace, monospace';
+        bevCtx.fillText(obj.name, ox + 8, oy + 3);
+      });
+    }
+
+    function renderObjCards() {
+      const grid = document.getElementById('objGrid');
+      grid.innerHTML = objects.map(o => `
+        <div class="obj-card">
+          <div class="obj-header">
+            <span class="obj-name">
+              <span class="obj-dot" style="background: ${o.color};"></span>
+              #${o.id} ${o.name.toUpperCase()}
+            </span>
+            <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent);">conf: ${(o.conf*100).toFixed(0)}%</span>
+          </div>
+          <div class="obj-metric-row">
+            <span style="color: var(--text-dim);">Tọa độ 3D (X, Y, Z):</span>
+            <span style="color: var(--text-main); font-weight: 700;">[${o.x > 0 ? '+' : ''}${o.x.toFixed(2)}, 0.00, ${o.z.toFixed(2)}] m</span>
+          </div>
+          <div class="obj-metric-row">
+            <span style="color: var(--text-dim);">Kích thước (L, W, H):</span>
+            <span style="color: var(--text-main); font-weight: 700;">${o.d.toFixed(2)} x ${o.w.toFixed(2)} x ${o.h.toFixed(2)} m</span>
+          </div>
+          <div class="obj-metric-row" style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--border-subtle);">
+            <span style="color: var(--text-dim);">Laser GT / Abs Error:</span>
+            <span style="color: var(--success); font-weight: 700;">${(o.z - 0.008).toFixed(3)}m / 8mm (0.4%)</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
