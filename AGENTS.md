@@ -6,8 +6,8 @@
 
 ## 1. Project Context
 
-- **Project Name**: Agent setup and configuration
-- **Current Goal**: Agent setup and configuration
+- **Project Name**: Monocular Spatial Vision
+- **Current Goal**: Monocular 3D spatial perception for mobile robots: front-view object detection, metric depth estimation, and 3D bounding box tracking using a single camera.
 - **Infrastructure Context**: MCP servers available via `.agents/mcp_config.json`.
 
 ---
