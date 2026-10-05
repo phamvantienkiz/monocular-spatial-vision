@@ -1,2 +1,14 @@
 # monocular-spatial-vision
 Description: Monocular 3D spatial perception for mobile robots: front-view object detection, metric depth estimation, and 3D bounding box tracking using a single camera.
+
+# LICENSE
+Copyright (c) 2026 ASIC Lab, Faculty of Computer Engineering, 
+University of Information Technology (UIT - VNUHCM).
+All Rights Reserved.
+
+This source code and related materials are proprietary and confidential to 
+ASIC Lab, Faculty of Computer Engineering, UIT. 
+
+Strictly forbidden to copy, distribute, modify, reverse engineer, or use 
+this code or any part of it for academic, commercial, or personal purposes 
+without explicit written permission from the copyright holders.
