@@ -1,0 +1,31 @@
+[project]
+name = "monocular-spatial-backend"
+version = "0.1.0"
+description = "Jetson AGX Xavier FastAPI Backend for Monocular 3D Perception"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.22.0",
+    "pydantic-settings>=2.0.0",
+    "numpy>=1.21.0",
+    "opencv-python-headless>=4.5.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.24.0",
+    "ruff>=0.1.0"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
