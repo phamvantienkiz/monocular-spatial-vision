@@ -1,0 +1,31 @@
+# Configuration: Camera Intrinsics and Rig Extrinsics (Pcam 5C / OV5640)
+# TODO for students: Calibrate camera with checkerboard and update intrinsic matrix K.
+
+camera:
+  name: "pcam_5c_ov5640"
+  image_width: 1280
+  image_height: 720
+  frame_rate: 30
+
+  # Pinhole Camera Matrix K
+  # [fx,  0, cx]
+  # [ 0, fy, cy]
+  # [ 0,  0,  1]
+  intrinsics:
+    fx: 920.0
+    fy: 920.0
+    cx: 640.0
+    cy: 360.0
+
+  # Lens distortion coefficients [k1, k2, p1, p2, k3]
+  distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+rig:
+  # Measured optical center height above ground plane (meters)
+  camera_height: 0.285
+
+  # Nominal mounting pitch angle downwards (degrees)
+  nominal_pitch_deg: 12.5
+
+  # Nominal mounting roll angle (degrees)
+  nominal_roll_deg: 0.0
