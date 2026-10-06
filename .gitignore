@@ -218,3 +218,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+#user-custom
+tasks/
+
+# Monocular Spatial Vision Project Ignores
+weights/*.pt
+weights/*.onnx
+weights/*.engine
+!weights/.gitkeep
+
+data/debug/*
+!data/debug/.gitkeep
+
+*.log
+logs/*.log
+!logs/.gitkeep

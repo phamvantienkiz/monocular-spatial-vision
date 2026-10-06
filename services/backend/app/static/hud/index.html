@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monocular Spatial Vision — Operator HUD</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="logo">
+      <span class="indicator live"></span>
+      <strong>MONOCULAR SPATIAL VISION — OPERATOR HUD</strong>
+    </div>
+    <div class="status-badge" id="hud-status">STATUS: CONNECTING...</div>
+  </header>
+
+  <main class="grid-container">
+    <!-- Camera Live Feed -->
+    <section class="card feed-card">
+      <div class="card-title">Camera Feed (1280x720) &amp; 3D Overlay</div>
+      <div class="feed-wrapper">
+        <img id="mjpeg-stream" src="/api/v1/stream/live" alt="Camera Feed" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'360\'><rect width=\'100%\' height=\'100%\' fill=\'%23111827\'/><text x=\'50%\' y=\'50%\' fill=\'%239CA3AF\' dominant-baseline=\'middle\' text-anchor=\'middle\'>Waiting for Camera Stream...</text></svg>'">
+      </div>
+    </section>
+
+    <!-- Telemetry Panel -->
+    <section class="card stats-card">
+      <div class="card-title">Real-Time Telemetry</div>
+      <div class="stats-grid">
+        <div class="stat-box"><span class="label">Pitch (θ)</span><span class="value" id="val-pitch">--°</span></div>
+        <div class="stat-box"><span class="label">Roll (φ)</span><span class="value" id="val-roll">--°</span></div>
+        <div class="stat-box"><span class="label">Height (hc)</span><span class="value" id="val-height">-- m</span></div>
+        <div class="stat-box"><span class="label">FPS</span><span class="value" id="val-fps">--</span></div>
+      </div>
+
+      <div class="card-subtitle">Detected Objects</div>
+      <ul class="object-list" id="object-list">
+        <li class="empty-msg">No objects detected yet</li>
+      </ul>
+    </section>
+
+    <!-- Bird's Eye View (BEV) -->
+    <section class="card bev-card">
+      <div class="card-title">Bird's Eye View (BEV 2D Grid)</div>
+      <canvas id="bev-canvas" width="400" height="300"></canvas>
+    </section>
+
+    <!-- Laser Ground Truth Benchmark -->
+    <section class="card laser-card">
+      <div class="card-title">Laser Ground Truth Verification</div>
+      <form id="laser-form">
+        <label for="laser-input">Laser Distance (meters):</label>
+        <div class="input-row">
+          <input type="number" id="laser-input" step="0.001" placeholder="e.g. 1.825" required>
+          <button type="submit" id="btn-verify">Verify</button>
+        </div>
+      </form>
+      <div class="benchmark-result" id="benchmark-result">
+        <div>Estimated Z: <span id="res-est">--</span> m</div>
+        <div>Abs Error: <span id="res-abs">--</span> m</div>
+        <div>AbsRel: <span id="res-absrel">--</span> %</div>
+        <div class="badge" id="res-badge">WAITING</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

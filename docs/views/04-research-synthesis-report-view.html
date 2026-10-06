@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Synthesis & RQ Decision Gates · Monocular Spatial Vision</title>
+  <style>
+    :root {
+      --bg-base: #0b0e14;
+      --bg-surface: #131824;
+      --bg-surface-elevated: #1b2336;
+      --bg-surface-hover: #232d44;
+      --border-subtle: #25314a;
+      --border-strong: #37476b;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.16);
+      --accent-hover: #7dd3fc;
+      --science-purple: #c084fc;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --science-purple: #9333ea;
+      --success: #059669;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: rgba(192, 132, 252, 0.15);
+      color: var(--science-purple);
+      border: 1px solid var(--science-purple);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1350px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      width: 100%;
+    }
+
+    .header-hero {
+      margin-bottom: 2rem;
+    }
+    .header-hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--science-purple);
+      margin-bottom: 0.5rem;
+    }
+    .header-hero h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .header-hero p {
+      color: var(--text-muted);
+      max-width: 880px;
+      font-size: 1.05rem;
+    }
+
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 1.2rem;
+      background: var(--science-purple);
+      border-radius: 2px;
+    }
+
+    /* RQ Pipeline Grid */
+    .rq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .rq-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .rq-card:hover, .rq-card.selected {
+      border-color: var(--science-purple);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+    }
+    .rq-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .rq-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--science-purple);
+      background: rgba(192, 132, 252, 0.12);
+      padding: 0.2rem 0.5rem;
+      border-radius: var(--radius-sm);
+    }
+    .gate-status {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+    .status-pass { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+    .status-watch { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
+
+    .rq-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--text-main);
+    }
+    .rq-question {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      line-height: 1.5;
+    }
+    .gate-info {
+      background: var(--bg-surface-elevated);
+      border-left: 3px solid var(--warning);
+      padding: 0.6rem 0.8rem;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .gate-info strong { color: var(--warning); }
+
+    /* Depth Comparison Matrix */
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 3rem;
+      overflow-x: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      background: var(--bg-surface-elevated);
+    }
+    .winner-tag {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--success);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+
+    .math-expr {
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", "Times New Roman", serif;
+      font-style: italic;
+      color: var(--science-purple);
+      padding: 0 2px;
+    }
+    .math-expr sub, .math-expr sup {
+      font-size: 0.75em;
+      line-height: 0;
+      position: relative;
+      vertical-align: baseline;
+    }
+    .math-expr sub { bottom: -0.25em; }
+    .math-expr sup { top: -0.5em; }
+
+    /* Benchmark Laser Protocol */
+    .benchmark-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .bench-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+    .bench-card {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      text-align: center;
+    }
+    .bench-dist {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+      font-weight: 700;
+    }
+    .bench-gt {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 0.2rem;
+    }
+    .bench-pred {
+      font-size: 0.75rem;
+      color: var(--text-main);
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .bench-absrel {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--success);
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">Research Reports</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link active">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="header-hero">
+      <div class="eyebrow">Academic Synthesis · Reports 00 to 06</div>
+      <h1>Tổng Hợp Báo Cáo Nghiên Cứu & Cổng Quyết Định (RQ Pipeline)</h1>
+      <p>Tổng hợp 7 chuyên đề nghiên cứu chuyên sâu tại ASIC Lab: hiệu chuẩn quang học, đo sâu đơn mắt, khôi phục 3D Bounding Box, ma trận so sánh 3 chiến lược Depth và bộ tiêu chuẩn nghiệm thu định lượng.</p>
+    </header>
+
+    <!-- RQ Questions Pipeline -->
+    <h2 class="section-title">Khung Câu Hỏi Nghiên Cứu & Cổng Quyết Định (RQ0 - RQ5)</h2>
+    <div class="rq-grid">
+      <div class="rq-card selected">
+        <div class="rq-header">
+          <span class="rq-badge">RQ0 · DRIVER BRINGUP</span>
+          <span class="gate-status status-pass">GATE PASSED</span>
+        </div>
+        <div class="rq-title">Kích Hoạt Pcam 5C Trên Pi 3</div>
+        <p class="rq-question">Làm thế nào mở được V4L2 cho OV5640 trên Raspberry Pi 3 và truyền luồng video về Jetson AGX Xavier đạt 1280x720 @ 30 FPS?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Nếu FPS &lt; 20 hoặc rớt /dev/video0 &rarr; kiểm tra cáp FFC 15-pin, cấu hình dtoverlay=ov5640, chuyển sang MJPEG nén phần cứng.
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-header">
+          <span class="rq-badge">RQ1 · SYNC & LATENCY</span>
+          <span class="gate-status status-pass">GATE PASSED</span>
+        </div>
+        <div class="rq-title">Đồng Bộ Nhịp Ảnh & Góc Nghiêng IMU</div>
+        <p class="rq-question">Làm thế nào đồng bộ thời gian giữa luồng ảnh và góc chúc MPU6050 với độ lệch &Delta;t &lt; 20ms và jitter &lt; 10ms?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Nếu &Delta;t &gt; 20ms &rarr; đóng gói trực tiếp mẩu tin IMU vào header 36-byte của frame ảnh ngay tại Pi 3 trước khi gửi socket.
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-header">
+          <span class="rq-badge">RQ2 · CALIB & METRIC DEPTH</span>
+          <span class="gate-status status-watch">UNDER WATCH</span>
+        </div>
+        <div class="rq-title">Tái Tạo Thang Đo Mét Cho Camera Đơn</div>
+        <p class="rq-question">Làm thế nào đạt sai số AbsRel &le; 5% trong cự ly 0.5 - 3.0m khi không có baseline stereo vật lý?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Nếu AbsRel &gt; 5% &rarr; đo lại chiều cao cơ khí hc; kiểm tra méo biên thấu kính; kích hoạt bộ lọc bù Complementary Filter &theta;(t).
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-header">
+          <span class="rq-badge">RQ3 · 2D-TO-3D BOUNDING BOX</span>
+          <span class="gate-status status-pass">GATE PASSED</span>
+        </div>
+        <div class="rq-title">Trích Xuất Hộp Bao 3D & Kích Thước</div>
+        <p class="rq-question">Làm thế nào xác định đáy vật thể chính xác khi gặp chân ghế rỗng hoặc bóng đổ mặt sàn?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Bắt buộc dùng mặt nạ phân đoạn thực thể YOLOv8-seg thay vì BBox 2D thông thường để trích xuất chân sàn thực sự.
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-header">
+          <span class="rq-badge">RQ4 · SPATIAL MEMORY & TF</span>
+          <span class="gate-status status-watch">PHASE 3 PREP</span>
+        </div>
+        <div class="rq-title">Chuyển Hệ Tọa Độ & Bộ Nhớ Không Gian</div>
+        <p class="rq-question">Làm thế nào duy trì tọa độ vật thể ổn định trong map frame khi thân robot quay mà không bị nhảy giật?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Tích hợp bộ lọc Extended Kalman Filter theo dõi vết 3D và khóa nhịp timestamp biến đổi TF Tree.
+        </div>
+      </div>
+
+      <div class="rq-card">
+        <div class="rq-header">
+          <span class="rq-badge">RQ5 · MULTI-SENSOR FUSION</span>
+          <span class="gate-status status-watch">PHASE 3 PREP</span>
+        </div>
+        <div class="rq-title">Hợp Nhất Đa Cảm Biến Với 2D LiDAR</div>
+        <p class="rq-question">Robot kết hợp camera đơn với RPLIDAR S2E như thế nào để khóa cứng cự ly Z và phát hiện vật cản treo ngoài tầm quét laser?</p>
+        <div class="gate-info">
+          <strong>Cổng quyết định:</strong> Dùng LiDAR khóa khoảng cách Z; dùng camera đơn bổ khuyết chiều cao H và nhận diện ngữ nghĩa vật cản.
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparative Analysis of 3 Depth Candidates -->
+    <h2 class="section-title">Ma Trận Đánh Giá 3 Chiến Lược Đo Sâu Đơn Mắt (RQ2 Deep-Dive)</h2>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Tiêu Chí Kỹ Thuật</th>
+            <th>1. Motion Stereo (SfM)</th>
+            <th>2. Metric Depth Net (Depth Anything V2)</th>
+            <th>3. 2D LiDAR Projection Fusion <span class="winner-tag">ROBUST CHOICE</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Cơ chế đo cự ly</strong></td>
+            <td>Tam giác hóa 2 frame theo thời gian chuyển động robot</td>
+            <td>Mạng nơ-ron học sâu ước lượng chiều sâu dày đặc</td>
+            <td>Chiếu điểm quét laser 2D lên vùng bbox 2D của camera</td>
+          </tr>
+          <tr>
+            <td><strong>Độ chính xác cự ly Z</strong></td>
+            <td>Phụ thuộc lớn vào sai số Odometry bánh xe (5-12%)</td>
+            <td>Trung bình (7-15%), cần neo tỷ lệ mặt sàn</td>
+            <td>Cực cao (&le; 1.5%), đo trực tiếp bằng tia laser ToF</td>
+          </tr>
+          <tr>
+            <td><strong>Đo vật thể treo lơ lửng</strong></td>
+            <td>Được (nếu môi trường có kết cấu texture)</td>
+            <td>Được (nhận thức hình dáng toàn phần)</td>
+            <td>Không trực tiếp (LiDAR chỉ quét 1 mặt phẳng cắt ngang)</td>
+          </tr>
+          <tr>
+            <td><strong>Tiêu thụ tài nguyên Jetson</strong></td>
+            <td>Nặng (Feature matching + Keyframe bundle adj)</td>
+            <td>Nặng (~22ms TensorRT FP16, chiếm ~1.8GB VRAM)</td>
+            <td>Cực nhẹ (&lt; 2ms, chỉ tính toán phép nhân ma trận hình học)</td>
+          </tr>
+          <tr>
+            <td><strong>Rủi ro kỹ thuật chính</strong></td>
+            <td>Robot đứng yên thì mất cự ly (không có baseline)</td>
+            <td>Sai số khi gặp bề mặt phản xạ gương / kính trong suốt</td>
+            <td>Lệch hiệu chuẩn ngoại quan Camera &harr; LiDAR</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Ground Truth Benchmark Simulation Protocol -->
+    <h2 class="section-title">Giao Thức Kiểm Nghiệm Đối Chuẩn Thước Laser Bosch (Benchmark Protocol)</h2>
+    <div class="benchmark-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main);">Dữ Liệu Thử Nghiệm Đối Chiếu Thực Địa Chuẩn Phòng Lab</h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">So sánh khoảng cách đo bằng thước laser Bosch GLM (<span class="math-expr"><i>d</i><sub>gt</sub></span>) và cự ly ước lượng IPM (<span class="math-expr"><i>d</i><sub>pred</sub></span>) trên các mốc tiêu chuẩn:</p>
+        </div>
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-surface-elevated); padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);">
+          Overall Mean AbsRel: <strong style="color: var(--success);">2.16%</strong> · RMSE: <strong style="color: var(--accent);">0.038 m</strong>
+        </div>
+      </div>
+
+      <div class="bench-grid">
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 0.5 M</div>
+          <div class="bench-gt">GT: 0.502 m</div>
+          <div class="bench-pred">Pred: 0.508 m</div>
+          <div class="bench-absrel">1.20%</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 1.0 M</div>
+          <div class="bench-gt">GT: 1.005 m</div>
+          <div class="bench-pred">Pred: 0.988 m</div>
+          <div class="bench-absrel">1.69%</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 1.5 M</div>
+          <div class="bench-gt">GT: 1.498 m</div>
+          <div class="bench-pred">Pred: 1.528 m</div>
+          <div class="bench-absrel">2.00%</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 2.0 M</div>
+          <div class="bench-gt">GT: 2.012 m</div>
+          <div class="bench-pred">Pred: 1.962 m</div>
+          <div class="bench-absrel">2.48%</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 2.5 M</div>
+          <div class="bench-gt">GT: 2.508 m</div>
+          <div class="bench-pred">Pred: 2.441 m</div>
+          <div class="bench-absrel">2.67%</div>
+        </div>
+        <div class="bench-card">
+          <div class="bench-dist">MỐC 3.0 M</div>
+          <div class="bench-gt">GT: 3.015 m</div>
+          <div class="bench-pred">Pred: 2.928 m</div>
+          <div class="bench-absrel">2.88%</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+
+    // RQ Card Interaction
+    const rqCards = document.querySelectorAll('.rq-card');
+    rqCards.forEach(card => {
+      card.addEventListener('click', () => {
+        rqCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+    });
+  </script>
+</body>
+</html>

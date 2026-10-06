@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Perception Pipeline & IPM Geometry · Monocular Spatial Vision</title>
+  <style>
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #101726;
+      --bg-surface-elevated: #182238;
+      --bg-surface-hover: #202d4a;
+      --border-subtle: #222f4c;
+      --border-strong: #32436d;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.16);
+      --accent-hover: #7dd3fc;
+      --math-gold: #fbbf24;
+      --success: #34d399;
+      --danger: #f87171;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --math-gold: #d97706;
+      --success: #059669;
+      --danger: #dc2626;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--math-gold);
+      border: 1px solid var(--math-gold);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1350px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      width: 100%;
+    }
+
+    .header-hero {
+      margin-bottom: 2rem;
+    }
+    .header-hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--math-gold);
+      margin-bottom: 0.5rem;
+    }
+    .header-hero h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .header-hero p {
+      color: var(--text-muted);
+      max-width: 880px;
+      font-size: 1.05rem;
+    }
+
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 1.2rem;
+      background: var(--math-gold);
+      border-radius: 2px;
+    }
+
+    /* Pipeline Step Flow */
+    .pipeline-flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    .pipeline-step {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      position: relative;
+      transition: all 0.2s;
+    }
+    .pipeline-step:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .step-number {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+      display: block;
+    }
+    .step-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--text-main);
+    }
+    .step-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Simulator Canvas & Controls */
+    .sim-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 2rem;
+    }
+    @media (max-width: 1024px) {
+      .sim-container { grid-template-columns: 1fr; }
+    }
+
+    .canvas-box {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #rayCanvas {
+      width: 100%;
+      height: 380px;
+      border-radius: var(--radius-sm);
+    }
+    .canvas-legend {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .sim-controls {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .control-label { color: var(--text-muted); }
+    .control-val {
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .output-panel {
+      background: var(--bg-base);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      margin-top: 0.5rem;
+    }
+    .output-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin-bottom: 0.4rem;
+    }
+    .output-row:last-child { margin-bottom: 0; }
+    .out-label { color: var(--text-dim); }
+    .out-val {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--math-gold);
+    }
+
+    /* Mathematical Proof Cards */
+    .math-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+    .math-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .math-code {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--math-gold);
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+      display: block;
+    }
+    .math-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--text-main);
+    }
+    .math-formula {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1rem;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .math-expr {
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", "Times New Roman", serif;
+      font-style: italic;
+      color: var(--math-gold);
+      padding: 0 2px;
+    }
+    .math-expr sub, .math-expr sup {
+      font-size: 0.75em;
+      line-height: 0;
+      position: relative;
+      vertical-align: baseline;
+    }
+    .math-expr sub { bottom: -0.25em; }
+    .math-expr sup { top: -0.5em; }
+    .math-expr .math-norm {
+      font-style: normal;
+      font-family: var(--font-sans);
+    }
+    .math-formula-box {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      font-family: "Cambria Math", "Latin Modern Math", "STIX Two Math", "Times New Roman", serif;
+      font-size: 1.1rem;
+      color: var(--text-main);
+    }
+    .math-frac {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: middle;
+      padding: 0 4px;
+    }
+    .math-num {
+      border-bottom: 1.5px solid currentColor;
+      padding: 0 4px 2px 4px;
+      text-align: center;
+      font-size: 0.9em;
+      width: 100%;
+    }
+    .math-den {
+      padding: 2px 4px 0 4px;
+      text-align: center;
+      font-size: 0.9em;
+      width: 100%;
+    }
+    .math-sqrt {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: middle;
+    }
+    .math-sqrt-radical {
+      font-size: 1.2em;
+      margin-right: 1px;
+    }
+    .math-sqrt-radicand {
+      border-top: 1.5px solid currentColor;
+      padding-top: 1px;
+    }
+    .math-paren {
+      font-size: 1.25em;
+      font-weight: 300;
+      vertical-align: middle;
+    }
+    .math-norm {
+      font-style: normal;
+      font-family: var(--font-sans);
+    }
+    .math-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">AI & Geometry</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link active">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="header-hero">
+      <div class="eyebrow">Deep Learning Inference & Projective Geometry</div>
+      <h1>Chuỗi Pipeline AI & Bộ Mô Phỏng Hình Học IPM</h1>
+      <p>Kết hợp giữa mạng phân đoạn thực thể YOLOv8-seg, bù trừ góc nghiêng động bằng gia tốc kế MPU6050, công thức chiếu phối cảnh ngược (IPM) và bộ mô phỏng tính toán cự ly trực quan thời gian thực.</p>
+    </header>
+
+    <!-- Pipeline Steps -->
+    <h2 class="section-title">Chuỗi Xử Lý Nhận Thức Không Gian 3D (7-Stage Pipeline)</h2>
+    <div class="pipeline-flow">
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 01</span>
+        <div class="step-title">Khử Méo Thấu Kính</div>
+        <p class="step-desc">Khử biến dạng quang học thấu kính góc rộng Pcam 5C theo mô hình Brown-Conrady 5 tham số <span class="math-expr">[<i>k</i><sub>1</sub>, <i>k</i><sub>2</sub>, <i>p</i><sub>1</sub>, <i>p</i><sub>2</sub>, <i>k</i><sub>3</sub>]</span>.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 02</span>
+        <div class="step-title">YOLOv8-seg TensorRT</div>
+        <p class="step-desc">Suy luận AI biên FP16 nhận diện 2D Bounding Box và trích xuất mặt nạ phân đoạn thực thể đa giác.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 03</span>
+        <div class="step-title">Trích Điểm Chân Sàn</div>
+        <p class="step-desc">Lọc bỏ bóng đổ, lấy điểm đáy tiếp xúc mặt sàn <span class="math-expr">(<i>u</i><sub>contact</sub>, <i>v</i><sub>max</sub>)</span> loại trừ chân ghế rỗng hoặc vật treo.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 04</span>
+        <div class="step-title">Bù Nghiêng IMU MPU</div>
+        <p class="step-desc">Đọc vector trọng lực gia tốc kế 3 trục tính góc chúc tức thời <span class="math-expr"><i>&theta;</i>(<i>t</i>) = <i>&theta;</i><sub>nom</sub> + &Delta;<i>&theta;</i>(<i>t</i>)</span> triệt tiêu rung chấn.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 05</span>
+        <div class="step-title">Giải Thuật Toán IPM</div>
+        <p class="step-desc">Tính cự ly <span class="math-expr"><i>Z</i> = <i>h</i><sub>c</sub> / tan(<i>&theta;</i>(<i>t</i>) + <i>&alpha;</i><sub><i>v</i></sub>)</span> và hoành độ ngang <span class="math-expr"><i>X</i> = <i>Z</i> &middot; (<i>u</i> &minus; <i>c</i><sub><i>x</i></sub>) / <i>f</i><sub><i>x</i></sub></span> chính xác tới từng cm.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 06</span>
+        <div class="step-title">Neo Tỷ Lệ Metric Depth</div>
+        <p class="step-desc">Dùng khoảng cách chân sàn neo tỷ lệ thang đo cho mô hình Depth Anything V2 khôi phục phần thân trên vật thể.</p>
+      </div>
+      <div class="pipeline-step">
+        <span class="step-number">BƯỚC 07</span>
+        <div class="step-title">Dựng Hộp Bao 3D</div>
+        <p class="step-desc">Khôi phục 8 đỉnh không gian <span class="math-expr">[<i>X</i>, <i>Y</i>, <i>Z</i>]</span>, kích thước <span class="math-expr">[<i>L</i>, <i>W</i>, <i>H</i>]</span> và phát sóng topic ROS 2 <code>/perception/objects_3d</code>.</p>
+      </div>
+    </div>
+
+    <!-- Interactive IPM Geometry Simulator -->
+    <h2 class="section-title">Bộ Mô Phỏng Hình Học Chiếu Phối Cảnh Ngược (Live IPM Simulator)</h2>
+    <div class="sim-container">
+      <div class="canvas-box">
+        <canvas id="rayCanvas" width="700" height="380"></canvas>
+        <div class="canvas-legend">
+          <div class="legend-item"><span class="legend-dot" style="background: #38bdf8;"></span> Trục quang học camera</div>
+          <div class="legend-item"><span class="legend-dot" style="background: #f43f5e;"></span> Tia quét điểm chạm sàn (Ray)</div>
+          <div class="legend-item"><span class="legend-dot" style="background: #fbbf24;"></span> Mặt phẳng sàn (Ground Plane)</div>
+          <div class="legend-item"><span class="legend-dot" style="background: #34d399;"></span> Vật thể phát hiện</div>
+        </div>
+      </div>
+
+      <div class="sim-controls">
+        <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--accent);">Bảng Điều Chỉnh Tham Số Quang Hình</h3>
+        
+        <div class="control-group">
+          <div class="control-header">
+            <span class="control-label">Chiều cao Camera (<span class="math-expr"><i>h</i><sub>c</sub></span>):</span>
+            <span class="control-val" id="valHeight">0.285 m</span>
+          </div>
+          <input type="range" id="sliderHeight" min="0.15" max="0.80" step="0.005" value="0.285">
+        </div>
+
+        <div class="control-group">
+          <div class="control-header">
+            <span class="control-label">Góc chúc danh định (<span class="math-expr"><i>&theta;</i><sub>nom</sub></span>):</span>
+            <span class="control-val" id="valPitch">12.5°</span>
+          </div>
+          <input type="range" id="sliderPitch" min="5.0" max="30.0" step="0.5" value="12.5">
+        </div>
+
+        <div class="control-group">
+          <div class="control-header">
+            <span class="control-label">Độ lệch rung lắc IMU (<span class="math-expr">&Delta;<i>&theta;</i></span>):</span>
+            <span class="control-val" id="valTilt">0.0°</span>
+          </div>
+          <input type="range" id="sliderTilt" min="-5.0" max="5.0" step="0.2" value="0.0">
+        </div>
+
+        <div class="control-group">
+          <div class="control-header">
+            <span class="control-label">Tọa độ Pixel đáy (<span class="math-expr"><i>v</i><sub>contact</sub></span>):</span>
+            <span class="control-val" id="valPixelV">520 px</span>
+          </div>
+          <input type="range" id="sliderPixelV" min="370" max="710" step="1" value="520">
+        </div>
+
+        <div class="output-panel">
+          <div class="output-row">
+            <span class="out-label">Góc tia dọc pixel (&alpha;<sub>v</sub>):</span>
+            <span class="out-val" id="outAlphaV">11.04°</span>
+          </div>
+          <div class="output-row">
+            <span class="out-label">Góc tổng hợp (&theta;<sub>eff</sub>):</span>
+            <span class="out-val" id="outTotalAngle">23.54°</span>
+          </div>
+          <div class="output-row" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-subtle);">
+            <span class="out-label" style="font-weight: 700; color: var(--text-main);">KHOẢNG CÁCH SÀN (Z<sub>ground</sub>):</span>
+            <span class="out-val" id="outDistanceZ" style="font-size: 1.2rem; color: var(--success);">0.654 m</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mathematical Formulation & Hypotheses Cards -->
+    <h2 class="section-title">Chứng Minh Toán Học & 4 Giả Thuyết Khoa Học (Hypotheses H1-H4)</h2>
+    <div class="math-grid">
+      <div class="math-card">
+        <span class="math-code">GIẢ THUYẾT H1 · HÌNH HỌC MẶT SÀN (IPM)</span>
+        <div class="math-title">Ước Lượng Khoảng Cách Đáy Vật Thể</div>
+        <div class="math-formula">
+          <div class="math-formula-box">
+            <i>Z</i> &equals;
+            <div class="math-frac">
+              <div class="math-num"><i>h</i><sub><i>c</i></sub></div>
+              <div class="math-den">
+                <span class="math-norm">tan</span><span class="math-paren">(</span><i>&theta;</i>(<i>t</i>) &plus; <span class="math-norm">arctan</span>
+                <div class="math-frac" style="font-size: 0.85em; display: inline-flex; vertical-align: middle;">
+                  <div class="math-num"><i>v</i> &minus; <i>c</i><sub><i>y</i></sub></div>
+                  <div class="math-den"><i>f</i><sub><i>y</i></sub></div>
+                </div><span class="math-paren">)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="math-desc">Khi <span class="math-expr"><i>h</i><sub><i>c</i></sub></span> và <span class="math-expr"><i>&theta;</i></span> được cố định, mô hình IPM xác định cự ly tới điểm tiếp xúc sàn với sai số AbsRel &le; 5% trong dải <span class="math-expr">0.5 m &ndash; 3.0 m</span> mà không cần camera kép.</p>
+      </div>
+
+      <div class="math-card">
+        <span class="math-code">GIẢ THUYẾT H2 · BÙ TILT ĐỘNG BẰNG IMU</span>
+        <div class="math-title">Khử Sai Số Do Biến Dạng Cơ Khí</div>
+        <div class="math-formula">
+          <div class="math-formula-box">
+            <i>&theta;</i>(<i>t</i>) &equals; <i>&theta;</i><sub>nominal</sub> &plus; <span class="math-norm">arctan2</span><span class="math-paren">(</span><i>a</i><sub><i>z</i></sub>, 
+            <span class="math-sqrt"><span class="math-sqrt-radical">&radic;</span><span class="math-sqrt-radicand"><i>a</i><sub><i>x</i></sub><sup>2</sup> &plus; <i>a</i><sub><i>y</i></sub><sup>2</sup></span></span><span class="math-paren">)</span>
+          </div>
+        </div>
+        <p class="math-desc">Gia tốc kế MPU6050 đo trực tiếp vector trọng lực tại 50Hz, cập nhật góc pitch tức thời, giảm phương sai sai số <span class="math-expr"><i>&sigma;</i><sub><i>Z</i></sub><sup>2</sup></span> đi ít nhất 40% khi giá đỡ bị rung.</p>
+      </div>
+
+      <div class="math-card">
+        <span class="math-code">GIẢ THUYẾT H3 · INSTANCE SEGMENTATION</span>
+        <div class="math-title">Khử Sai Lệch Điểm Chạm Sàn Do Đổ Bóng</div>
+        <div class="math-formula">
+          <div class="math-formula-box">
+            <i>v</i><sub>contact</sub> &equals; 
+            <span style="display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 4px;">
+              <span class="math-norm" style="font-size: 0.95em;">max</span>
+              <span style="font-size: 0.7em; margin-top: -2px;"><i>u</i> &isin; Mask</span>
+            </span>
+            &lbrace; <i>v</i> &rbrace; &nbsp; <span class="math-norm" style="font-size: 0.85em; color: var(--text-dim);">(với Shadow Filter)</span>
+          </div>
+        </div>
+        <p class="math-desc">Sử dụng mặt nạ phân đoạn đa giác thay cho hộp bao 2D chữ nhật giúp loại bỏ hoàn toàn chân ghế rỗng và bóng đổ sàn, hạn chế trôi lệch cự ly.</p>
+      </div>
+
+      <div class="math-card">
+        <span class="math-code">GIẢ THUYẾT H4 · SCALE-ANCHORED METRIC DEPTH</span>
+        <div class="math-title">Đo Sâu Đối Tượng Treo Lơ Lửng</div>
+        <div class="math-formula">
+          <div class="math-formula-box">
+            <i>s</i> &equals;
+            <div class="math-frac">
+              <div class="math-num"><i>Z</i><sub>ground</sub></div>
+              <div class="math-den"><span class="math-norm">median</span><span class="math-paren">(</span><i>Z</i><sub>net</sub>[mask]<span class="math-paren">)</span></div>
+            </div>
+            &nbsp;,&emsp; <i>Z</i><sub>metric</sub> &equals; <i>s</i> &sdot; <i>Z</i><sub>net</sub>
+          </div>
+        </div>
+        <p class="math-desc">Neo tỷ lệ bản đồ độ sâu Depth Anything V2 bằng cự ly sàn IPM đã biết, cho phép đo đạc mép bàn lơ lửng với AbsRel &le; 10%.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+      drawSimulator();
+    });
+
+    // Simulator Interactive Logic
+    const sliderHeight = document.getElementById('sliderHeight');
+    const sliderPitch = document.getElementById('sliderPitch');
+    const sliderTilt = document.getElementById('sliderTilt');
+    const sliderPixelV = document.getElementById('sliderPixelV');
+
+    const valHeight = document.getElementById('valHeight');
+    const valPitch = document.getElementById('valPitch');
+    const valTilt = document.getElementById('valTilt');
+    const valPixelV = document.getElementById('valPixelV');
+
+    const outAlphaV = document.getElementById('outAlphaV');
+    const outTotalAngle = document.getElementById('outTotalAngle');
+    const outDistanceZ = document.getElementById('outDistanceZ');
+
+    const canvas = document.getElementById('rayCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Camera Intrinsics
+    const fy = 820.0;
+    const cy = 360.0;
+
+    function updateSimulation() {
+      const hc = parseFloat(sliderHeight.value);
+      const thetaNom = parseFloat(sliderPitch.value);
+      const deltaTheta = parseFloat(sliderTilt.value);
+      const v = parseFloat(sliderPixelV.value);
+
+      valHeight.innerText = hc.toFixed(3) + ' m';
+      valPitch.innerText = thetaNom.toFixed(1) + '°';
+      valTilt.innerText = (deltaTheta >= 0 ? '+' : '') + deltaTheta.toFixed(1) + '°';
+      valPixelV.innerText = v.toFixed(0) + ' px';
+
+      // Math
+      const alphaRad = Math.atan((v - cy) / fy);
+      const alphaDeg = alphaRad * (180 / Math.PI);
+      const thetaEffDeg = thetaNom + deltaTheta + alphaDeg;
+      const thetaEffRad = thetaEffDeg * (Math.PI / 180);
+
+      let distanceZ = 0;
+      if (thetaEffDeg > 0.5 && thetaEffDeg < 89.0) {
+        distanceZ = hc / Math.tan(thetaEffRad);
+      } else {
+        distanceZ = NaN;
+      }
+
+      outAlphaV.innerText = alphaDeg.toFixed(2) + '°';
+      outTotalAngle.innerText = thetaEffDeg.toFixed(2) + '°';
+      outDistanceZ.innerText = isNaN(distanceZ) ? 'Out of Range' : distanceZ.toFixed(3) + ' m';
+
+      drawSimulator(hc, thetaNom, deltaTheta, thetaEffDeg, distanceZ);
+    }
+
+    function drawSimulator(hc, thetaNom, deltaTheta, thetaEffDeg, distanceZ) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const isDark = root.getAttribute('data-theme') !== 'light';
+
+      const groundY = canvas.height - 50;
+      const originX = 80;
+      const originY = groundY - (hc * 320); // Scale 320px per meter
+
+      // Ground plane
+      ctx.beginPath();
+      ctx.strokeStyle = isDark ? '#fbbf24' : '#d97706';
+      ctx.lineWidth = 3;
+      ctx.moveTo(30, groundY);
+      ctx.lineTo(canvas.width - 30, groundY);
+      ctx.stroke();
+
+      // Ground hatching
+      ctx.strokeStyle = isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(217, 119, 6, 0.2)';
+      ctx.lineWidth = 1;
+      for (let x = 40; x < canvas.width - 30; x += 25) {
+        ctx.beginPath();
+        ctx.moveTo(x, groundY);
+        ctx.lineTo(x - 15, groundY + 15);
+        ctx.stroke();
+      }
+
+      // Robot Mast & Camera Body
+      ctx.fillStyle = isDark ? '#334155' : '#cbd5e1';
+      ctx.fillRect(originX - 12, originY, 24, groundY - originY);
+
+      // Camera Box
+      ctx.save();
+      ctx.translate(originX, originY);
+      const totalPitchRad = ((thetaNom + deltaTheta) * Math.PI) / 180;
+      ctx.rotate(totalPitchRad);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(-15, -12, 35, 24);
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.arc(20, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Optical Axis Line
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(20, 0);
+      ctx.lineTo(350, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Intersection Point on Ground
+      const scaleX = 140; // 140px per meter in Z
+      const targetX = originX + (distanceZ * scaleX);
+
+      if (!isNaN(distanceZ) && targetX < canvas.width - 20) {
+        // Projection Ray
+        ctx.strokeStyle = '#f43f5e';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(originX, originY);
+        ctx.lineTo(targetX, groundY);
+        ctx.stroke();
+
+        // Target Object Box
+        ctx.fillStyle = isDark ? 'rgba(52, 211, 153, 0.3)' : 'rgba(5, 150, 105, 0.25)';
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 2;
+        ctx.fillRect(targetX - 20, groundY - 90, 40, 90);
+        ctx.strokeRect(targetX - 20, groundY - 90, 40, 90);
+
+        // Ground Contact Point Dot
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.arc(targetX, groundY, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Distance text label
+        ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
+        ctx.font = 'bold 12px ui-monospace, monospace';
+        ctx.fillText(`Z = ${distanceZ.toFixed(3)} m`, targetX - 35, groundY - 100);
+      }
+    }
+
+    [sliderHeight, sliderPitch, sliderTilt, sliderPixelV].forEach(el => {
+      el.addEventListener('input', updateSimulation);
+    });
+
+    // Initial render
+    updateSimulation();
+  </script>
+</body>
+</html>

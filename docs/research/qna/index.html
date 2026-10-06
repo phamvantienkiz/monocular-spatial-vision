@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monocular Spatial Vision · Tài Liệu Phân Tích & Mô Phỏng Nhận Thức 3D</title>
+  <style>
+    :root {
+      --bg-base: #070b14;
+      --bg-surface: #0f172a;
+      --bg-surface-elevated: #1e293b;
+      --bg-surface-hover: #27354f;
+      --border-subtle: #1e293b;
+      --border-strong: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+      --accent-hover: #7dd3fc;
+      --math-gold: #fbbf24;
+      --math-gold-glow: rgba(251, 191, 36, 0.2);
+      --success: #34d399;
+      --danger: #f87171;
+      --purple: #c084fc;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      --font-math: "Cambria Math", "STIX Two Math", "Latin Modern Math", "Times New Roman", serif;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 22px;
+      --radius-full: 9999px;
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.6);
+      --shadow-glow: 0 0 35px rgba(56, 189, 248, 0.25);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --math-gold: #d97706;
+      --math-gold-glow: rgba(217, 119, 6, 0.15);
+      --success: #059669;
+      --danger: #dc2626;
+      --purple: #9333ea;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 10px 25px rgba(0, 0, 0, 0.08);
+      --shadow-glow: 0 0 25px rgba(2, 132, 199, 0.15);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.65;
+      overflow-x: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* TOP NAVIGATION */
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.85rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.3s ease;
+    }
+    [data-theme="light"] .top-nav {
+      background: rgba(255, 255, 255, 0.88);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--math-gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      color: #070b14;
+      font-size: 1.2rem;
+      box-shadow: 0 0 18px var(--accent-glow);
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+    }
+    .brand-badge {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: color 0.2s ease;
+    }
+    .nav-links a:hover {
+      color: var(--accent);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .theme-toggle-btn {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-main);
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s ease;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* CONTAINER */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 6rem;
+    }
+
+    /* HERO SECTION */
+    .hero-section {
+      text-align: center;
+      padding: 3.5rem 1rem 3rem;
+      position: relative;
+    }
+    .hero-glow {
+      position: absolute;
+      top: 5%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 300px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, rgba(0,0,0,0) 70%);
+      filter: blur(60px);
+      z-index: -1;
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--math-gold);
+      background: var(--math-gold-glow);
+      border: 1px solid var(--math-gold);
+      padding: 0.35rem 1rem;
+      border-radius: var(--radius-full);
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.5rem;
+      animation: floatBadge 3.5s ease-in-out infinite;
+    }
+    @keyframes floatBadge {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    .hero-title {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 900;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(135deg, var(--text-main) 25%, var(--accent) 70%, var(--math-gold) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-lead {
+      font-size: clamp(1.05rem, 2vw, 1.25rem);
+      color: var(--text-muted);
+      max-width: 920px;
+      margin: 0 auto 2.5rem;
+      font-weight: 400;
+    }
+
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 2.75rem;
+    }
+    .spec-tag {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      padding: 0.5rem 1.1rem;
+      border-radius: var(--radius-full);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .spec-tag span.badge-num {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 700;
+    }
+
+    /* ACTION BUTTONS */
+    .cta-group {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 3.5rem;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #0284c7);
+      color: #ffffff;
+      padding: 0.85rem 1.9rem;
+      border-radius: var(--radius-full);
+      font-weight: 700;
+      text-decoration: none;
+      font-size: 0.95rem;
+      box-shadow: 0 4px 20px var(--accent-glow);
+      transition: all 0.25s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px rgba(56, 189, 248, 0.4);
+    }
+    .btn-secondary {
+      background: var(--bg-surface-elevated);
+      color: var(--text-main);
+      border: 1px solid var(--border-strong);
+      padding: 0.85rem 1.9rem;
+      border-radius: var(--radius-full);
+      font-weight: 700;
+      text-decoration: none;
+      font-size: 0.95rem;
+      transition: all 0.25s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-secondary:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--accent);
+    }
+
+    /* SECTION COMMON */
+    .section-wrap {
+      margin-bottom: 5.5rem;
+      scroll-margin-top: 6rem;
+    }
+    .section-header {
+      margin-bottom: 2rem;
+    }
+    .section-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .section-heading {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .section-sub {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 860px;
+    }
+
+    /* CARDS */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.5rem;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .interactive-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2.25rem;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .interactive-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-md);
+    }
+    .card-top-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 1.25rem;
+    }
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      color: var(--text-main);
+    }
+    .card-text {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+
+    /* TECHNICAL PRESENTATION BOX */
+    .qa-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      margin-bottom: 2rem;
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+    .qa-header-topic {
+      background: var(--bg-surface-elevated);
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .topic-icon-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--math-gold);
+      color: #070b14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .qa-topic-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+    .qa-body-content {
+      padding: 2rem;
+    }
+    .system-status-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      padding: 0.2rem 0.6rem;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.25rem;
+      font-weight: 700;
+    }
+
+    /* MATHEMATICAL FORMULA TYPOGRAPHY (NO RAW LATEX / NO BROKEN FONTS) */
+    .math-sym {
+      font-family: var(--font-math);
+      font-style: italic;
+      padding: 0 1px;
+    }
+    .math-vec {
+      font-family: var(--font-mono);
+      font-weight: 700;
+    }
+    .math-eq-box {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-left: 4px solid var(--math-gold);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding: 1.1rem 1.35rem;
+      margin: 1.25rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      font-size: 0.98rem;
+    }
+    .math-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      color: var(--math-gold);
+      font-family: var(--font-mono);
+    }
+    .math-row .math-title-label {
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .math-row .math-expr-content {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 1.05rem;
+      color: var(--accent);
+    }
+    .math-fraction {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+      font-size: 0.92em;
+      line-height: 1.15;
+    }
+    .math-fraction .num {
+      border-bottom: 1.5px solid currentColor;
+      padding-bottom: 2px;
+    }
+    .math-fraction .den {
+      padding-top: 2px;
+    }
+
+    /* TABS */
+    .tabs-nav {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--bg-surface-elevated);
+      padding: 0.35rem;
+      border-radius: var(--radius-full);
+      width: fit-content;
+      margin-bottom: 2rem;
+      border: 1px solid var(--border-strong);
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.65rem 1.5rem;
+      font-size: 0.88rem;
+      font-weight: 700;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+    .tab-pane {
+      display: none;
+      animation: fadeIn 0.35s ease;
+    }
+    .tab-pane.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* SIMULATOR LAB */
+    .sim-lab {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 2.25rem;
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 2rem;
+      align-items: start;
+    }
+    @media (max-width: 992px) {
+      .sim-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .canvas-viewport {
+      background: #030712;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #simCanvas {
+      width: 100%;
+      height: 420px;
+      display: block;
+    }
+    .canvas-overlay-hud {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(15, 23, 42, 0.82);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: var(--radius-sm);
+      padding: 0.6rem 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--accent);
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+
+    .sim-controls-panel {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .slider-labels .val-badge {
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      height: 6px;
+      background: var(--border-strong);
+      border-radius: var(--radius-full);
+      cursor: pointer;
+    }
+
+    .telemetry-board {
+      background: var(--bg-base);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .telem-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.88rem;
+    }
+    .telem-name {
+      color: var(--text-dim);
+    }
+    .telem-value {
+      font-family: var(--font-mono);
+      font-weight: 800;
+      color: var(--math-gold);
+    }
+    .telem-value.accent {
+      color: var(--accent);
+    }
+    .telem-value.success {
+      color: var(--success);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.88rem;
+      font-weight: 600;
+      padding-top: 0.5rem;
+      border-top: 1px dashed var(--border-subtle);
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider-round {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: var(--border-strong);
+      transition: .3s;
+      border-radius: 34px;
+    }
+    .slider-round:before {
+      position: absolute;
+      content: "";
+      height: 18px; width: 18px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .slider-round { background-color: var(--success); }
+    input:checked + .slider-round:before { transform: translateX(20px); }
+
+    /* PROCESS STEPPER PIPELINE */
+    .pipeline-stepper {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      position: relative;
+    }
+    .pipeline-stepper::before {
+      content: "";
+      position: absolute;
+      top: 2rem;
+      bottom: 2rem;
+      left: 28px;
+      width: 3px;
+      background: linear-gradient(to bottom, var(--accent), var(--math-gold), var(--success));
+      z-index: 1;
+    }
+    .step-item {
+      display: flex;
+      gap: 1.5rem;
+      position: relative;
+      z-index: 2;
+    }
+    .step-node {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: var(--bg-surface-elevated);
+      border: 3px solid var(--accent);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 1.25rem;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+    .step-content {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.5rem 1.75rem;
+      flex-grow: 1;
+      box-shadow: var(--shadow-sm);
+      transition: border-color 0.2s;
+    }
+    .step-content:hover {
+      border-color: var(--accent);
+    }
+    .step-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--math-gold);
+      background: var(--math-gold-glow);
+      padding: 0.2rem 0.6rem;
+      border-radius: var(--radius-sm);
+      font-weight: 700;
+      display: inline-block;
+      margin-bottom: 0.4rem;
+    }
+    .step-heading {
+      font-size: 1.2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+
+    /* COMPARISON TABLE */
+    .table-responsive {
+      overflow-x: auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    table.custom-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+    table.custom-table th {
+      background: var(--bg-surface-elevated);
+      padding: 1rem 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      border-bottom: 2px solid var(--border-strong);
+      white-space: nowrap;
+    }
+    table.custom-table td {
+      padding: 1.1rem 1.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      vertical-align: top;
+    }
+    table.custom-table tr:hover td {
+      background: var(--bg-surface-hover);
+      color: var(--text-main);
+    }
+
+    /* FOOTER */
+    .page-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 3rem 1.5rem;
+      background: var(--bg-surface);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero-title { font-size: 2rem; }
+      .container { padding: 1.5rem 1rem 4rem; }
+      .pipeline-stepper::before { left: 20px; }
+      .step-node { width: 42px; height: 42px; font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP NAVIGATION -->
+  <header class="top-nav">
+    <a href="#intro" class="brand-wrap">
+      <div class="brand-logo">👁️</div>
+      <div>
+        <div class="brand-title">Monocular Spatial Vision</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim);">Tài Liệu Nghiên Cứu Độc Lập</div>
+      </div>
+      <span class="brand-badge">Standalone Portal</span>
+    </a>
+
+    <nav>
+      <ul class="nav-links">
+        <li><a href="#core-problem">Vấn Đề Kỹ Thuật</a></li>
+        <li><a href="#three-pillars">3 Trụ Cột Giải Pháp</a></li>
+        <li><a href="#interactive-lab">Thí Nghiệm Đo Cự Ly</a></li>
+        <li><a href="#pipeline-flow">Quy Trình Xử Lý</a></li>
+        <li><a href="#comparison-matrix">Ma Trận Đối Chiếu</a></li>
+      </ul>
+    </nav>
+
+    <div class="nav-actions">
+      <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle Theme">
+        <span id="themeIcon">☀️</span> <span id="themeText">Sáng</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- HERO SECTION -->
+    <section class="hero-section" id="intro">
+      <div class="hero-glow"></div>
+      <div class="hero-eyebrow">
+        <span>⚡ UIT ASIC Lab · Monocular 3D Perception System</span>
+      </div>
+
+      <h1 class="hero-title">
+        Giải Pháp Nhận Thức Không Gian 3D<br>Chỉ Bằng 1 Camera Đơn
+      </h1>
+
+      <p class="hero-lead">
+        Tài liệu kỹ thuật trực quan trình bày phương pháp sử dụng <strong>1 camera màu (Pcam 5C)</strong> kết hợp <strong>cảm biến IMU 6-DoF</strong> để đồng thời phát hiện vật thể, đo khoảng cách hệ mét chuẩn xác, khôi phục kích thước thực và dựng hộp giới hạn 3D cho Mobile Robot tự hành.
+      </p>
+
+      <div class="hero-tags">
+        <div class="spec-tag">📷 <span>1× Digilent Pcam 5C (OV5640 5MP)</span></div>
+        <div class="spec-tag">🍓 <span>Raspberry Pi 3 Model B (MIPI CSI-2)</span></div>
+        <div class="spec-tag">🧭 <span>IMU 6-DoF MPU6050 (Bù góc nghiêng 100Hz)</span></div>
+        <div class="spec-tag">🧠 <span>NVIDIA Jetson AGX Xavier (TensorRT FP16)</span></div>
+        <div class="spec-tag">🎯 <span>Sai số AbsRel: <span class="badge-num">&lt; 5%</span> (0.5m – 3.0m)</span></div>
+      </div>
+
+      <div class="cta-group">
+        <a href="#core-problem" class="btn-primary">
+          <span>📖 Phân Tích Kỹ Thuật Trọng Tâm</span>
+        </a>
+        <a href="#interactive-lab" class="btn-secondary">
+          <span>🎮 Khu Vực Mô Phỏng Tương Tác</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- SECTION 1: CORE TECHNICAL QUESTION & DILEMMA -->
+    <section class="section-wrap" id="core-problem">
+      <div class="section-header">
+        <div class="section-eyebrow">
+          <span>01. CƠ SỞ KHOA HỌC</span>
+        </div>
+        <h2 class="section-heading">Nghịch Lý Mất Mát Thước Đo Mét (Scale Ambiguity)</h2>
+        <p class="section-sub">
+          Nguyên lý hình học giải thích vì sao một bức ảnh RGB đơn mắt không chứa thang đo mét nội tại và cơ chế phá vỡ giới hạn này.
+        </p>
+      </div>
+
+      <!-- MAIN PRESENTATION BOX -->
+      <div class="qa-box">
+        <div class="qa-header-topic">
+          <div class="topic-icon-badge">🎯</div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--math-gold); font-family: var(--font-mono); text-transform: uppercase;">Tuyên Bố Bài Toán Cốt Lõi</div>
+            <div class="qa-topic-title">
+              Phương pháp sử dụng 1 camera để giải quyết đồng thời: Phát hiện vật thể (Object Detection), Xác định khoảng cách từ camera đến vật thể (Distance Estimation), và Xác định kích thước vật thể (Physical Dimensions & 3D Bounding Box).
+            </div>
+          </div>
+        </div>
+
+        <div class="qa-body-content">
+          <span class="system-status-tag">Kiến Trúc Nhận Thức Độc Lập Không Cần LiDAR</span>
+
+          <h3 style="font-size: 1.35rem; font-weight: 800; margin-bottom: 1rem; color: var(--text-main);">
+            Bản Chất Hình Học: Sự Mất Mát Chiều Sâu & Ba Khoản Vay Tiên Nghiệm
+          </h3>
+
+          <p class="card-text">
+            Bản thân một bức ảnh RGB phẳng chụp từ 1 camera <strong>không chứa thước đo mét thực tế</strong>. Một vật thể nhỏ ở cự ly gần (như mô hình đồ chơi) và một vật thể khổng lồ ở cự ly xa (như ô tô thật) đều có thể chiếm số lượng pixel y hệt nhau trên mặt phẳng cảm biến. Trong hình học xạ ảnh, hiện tượng này được định nghĩa là <em>Mất mát tỷ lệ (Scale Ambiguity)</em>.
+          </p>
+
+          <div class="math-eq-box">
+            <div class="math-row">
+              <span class="math-title-label">Phương trình chiếu tia quang học:</span>
+              <span class="math-expr-content">
+                <span class="math-vec">P</span>(<span class="math-sym">Z</span>) = <span class="math-sym">Z</span> &middot; <span class="math-vec">K</span><sup>&minus;1</sup> &middot; [<span class="math-sym">u</span>, <span class="math-sym">v</span>, 1]<sup>T</sup>
+              </span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.2rem;">
+              Bất kỳ giá trị chiều sâu <span class="math-sym">Z</span> &gt; 0 nào cũng thỏa mãn cùng một tọa độ điểm ảnh [<span class="math-sym">u</span>, <span class="math-sym">v</span>] trên cảm biến.
+            </p>
+          </div>
+
+          <p class="card-text">
+            Để đo đạc chính xác cự ly mét mà <strong>không sử dụng LiDAR hay cụm Camera Stereo</strong>, hệ thống khai thác 3 ràng buộc vật lý tiên nghiệm:
+          </p>
+
+          <div class="grid-3" style="margin-bottom: 0.5rem;">
+            <div style="background: var(--bg-surface-elevated); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 700;">📐 Ràng buộc lắp đặt cơ khí</div>
+              <p style="font-size: 0.88rem; color: var(--text-muted);">
+                Chiều cao thấu kính <span class="math-sym">h</span><sub>c</sub> = 0.40 m và góc chúc <span class="math-sym">&theta;</span><sub>0</sub> &approx; 15&deg; được cố định và đo chuẩn xác.
+              </p>
+            </div>
+            <div style="background: var(--bg-surface-elevated); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 700;">🏢 Ràng buộc mặt sàn phẳng</div>
+              <p style="font-size: 0.88rem; color: var(--text-muted);">
+                Robot và chướng ngại vật cùng nằm trên mặt phẳng sàn nằm ngang (<span class="math-sym">Z</span><sub>W</sub> = 0).
+              </p>
+            </div>
+            <div style="background: var(--bg-surface-elevated); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 1.15rem; margin-bottom: 0.4rem; font-weight: 700;">🧭 Bù góc động bằng IMU</div>
+              <p style="font-size: 0.88rem; color: var(--text-muted);">
+                Cảm biến MPU6050 gắn cùng camera đo vector trọng lực để cập nhật góc chúc <span class="math-sym">&theta;</span>(<span class="math-sym">t</span>) liên tục ở tần số 100 Hz.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: THREE PILLARS (SOLUTIONS) -->
+    <section class="section-wrap" id="three-pillars">
+      <div class="section-header">
+        <div class="section-eyebrow">
+          <span>02. CHI TIẾT GIẢI PHÁP</span>
+        </div>
+        <h2 class="section-heading">Ba Trụ Cột Nhận Thức Kỹ Thuật</h2>
+        <p class="section-sub">
+          Quy trình giải quyết tuần tự từ tầng nhận diện biên dạng 2D, suy luận khoảng cách lượng giác và tái tạo thể tích hình học 3D.
+        </p>
+      </div>
+
+      <!-- TABS CONTROLLER -->
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchPillarTab('pillar1', this)">Trụ Cột 1: Phát Hiện Vật Thể (2D/Mask)</button>
+        <button class="tab-btn" onclick="switchPillarTab('pillar2', this)">Trụ Cột 2: Đo Khoảng Cách (IPM + IMU)</button>
+        <button class="tab-btn" onclick="switchPillarTab('pillar3', this)">Trụ Cột 3: Kích Thước & 3D Bounding Box</button>
+      </div>
+
+      <!-- TAB 1: DETECTION & SEGMENTATION -->
+      <div class="tab-pane active" id="pillar1">
+        <div class="grid-2">
+          <div class="interactive-card">
+            <div class="card-top-icon">📦</div>
+            <h3 class="card-title">Hạn Chế Của Hộp Giới Hạn 2D (Bounding Box)</h3>
+            <p class="card-text">
+              Trong các hệ thống nhận thức thông thường, đầu ra là hộp chữ nhật 2D [<span class="math-sym">u</span><sub>min</sub>, <span class="math-sym">v</span><sub>min</sub>, <span class="math-sym">u</span><sub>max</sub>, <span class="math-sym">v</span><sub>max</sub>]. Phương pháp truyền thống thường giả định trung điểm cạnh đáy đại diện cho chân tiếp xúc mặt sàn. Cách tiếp cận này bộc lộ hai sai số nghiêm trọng:
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div style="background: rgba(248, 113, 113, 0.1); border-left: 3px solid var(--danger); padding: 0.75rem 1rem; border-radius: 4px;">
+                <strong style="color: var(--danger);">1. Lỗi bóng đổ (Floor Shadow):</strong> Ánh sáng tạo bóng dài trên sàn. Mạng nơ-ron thường gộp bóng đổ vào hộp bao, khiến đáy hộp bị kéo tụt xuống sàn 10–15 pixel, dẫn đến ước tính khoảng cách bị ngắn hơn thực tế 30–50 cm.
+              </div>
+              <div style="background: rgba(248, 113, 113, 0.1); border-left: 3px solid var(--danger); padding: 0.75rem 1rem; border-radius: 4px;">
+                <strong style="color: var(--danger);">2. Chân ghế xoay rỗng / Chân bàn xiên:</strong> Cạnh đáy hộp không chạm chân trước gần nhất mà rơi vào khoảng trống hoặc chân sau xa hơn.
+              </div>
+            </div>
+          </div>
+
+          <div class="interactive-card">
+            <div class="card-top-icon">✨</div>
+            <h3 class="card-title">Phân Đoạn Thực Thể (YOLOv8-seg TensorRT FP16)</h3>
+            <p class="card-text">
+              Hệ thống triển khai mạng <strong>YOLOv8n-seg / YOLOv11n-seg</strong> biên dịch sang TensorRT FP16 trên Jetson AGX Xavier (thời gian suy luận &approx; 6.5 ms, tốc độ &gt; 25 FPS).
+            </p>
+            <p class="card-text">
+              Thay vì sử dụng hộp chữ nhật lỏng lẻo, mô hình sinh ra <strong>mặt nạ nhị phân (Instance Mask)</strong> bao bọc chính xác từng pixel thuộc về thân đối tượng:
+            </p>
+            <ul style="color: var(--text-muted); font-size: 0.95rem; margin-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+              <li>Cắt vùng 20% chân đáy đối tượng, quét các pixel biên tiếp xúc mặt đất.</li>
+              <li>Áp dụng <strong>phân vị 95% (95th percentile)</strong> thay vì cực đại tuyệt đối để triệt tiêu hoàn toàn các pixel nhiễu bóng mờ lẻ loi.</li>
+              <li>Xác định tọa độ hàng pixel tiếp xúc sàn <span class="math-sym">v</span><sub>contact</sub> với độ chính xác từng pixel.</li>
+            </ul>
+            <div class="math-eq-box">
+              <div class="math-row">
+                <span class="math-title-label">Tọa độ tiếp xúc sàn:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">v</span><sub>contact</sub> = Percentile<sub>95</sub>({ <span class="math-sym">v</span> | Mask(<span class="math-sym">u</span>, <span class="math-sym">v</span>) = 1 tại đáy })
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: DISTANCE ESTIMATION -->
+      <div class="tab-pane" id="pillar2">
+        <div class="grid-2">
+          <div class="interactive-card">
+            <div class="card-top-icon">📐</div>
+            <h3 class="card-title">Chiếu Phối Cảnh Ngược Mặt Sàn (Ground IPM)</h3>
+            <p class="card-text">
+              <strong>Nguyên lý hình học:</strong> Camera đặt ở độ cao <span class="math-sym">h</span><sub>c</sub>, nghiêng chúc xuống sàn một góc <span class="math-sym">&theta;</span>. Vật càng ở xa thì điểm tiếp xúc chân đáy trên ảnh càng nằm cao (gần đường chân trời); vật càng ở gần thì chân càng nằm sát mép dưới ảnh.
+            </p>
+            <p class="card-text">
+              Áp dụng hệ thức lượng giác tam giác vuông trong không gian quang học:
+            </p>
+            <div class="math-eq-box">
+              <div class="math-row">
+                <span class="math-title-label">Góc lệch quang học:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">&alpha;</span>(<span class="math-sym">v</span>) = arctan
+                  <span class="math-fraction">
+                    <span class="num"><span class="math-sym">v</span><sub>contact</sub> &minus; <span class="math-sym">c</span><sub>y</sub></span>
+                    <span class="den"><span class="math-sym">f</span><sub>y</sub></span>
+                  </span>
+                </span>
+              </div>
+              <div class="math-row">
+                <span class="math-title-label">Khoảng cách tiến hệ mét:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">Z</span> = 
+                  <span class="math-fraction">
+                    <span class="num"><span class="math-sym">h</span><sub>c</sub></span>
+                    <span class="den">tan(<span class="math-sym">&theta;</span>(<span class="math-sym">t</span>) + <span class="math-sym">&alpha;</span>(<span class="math-sym">v</span>))</span>
+                  </span>
+                </span>
+              </div>
+              <div class="math-row">
+                <span class="math-title-label">Khoảng cách lệch ngang:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">X</span> = <span class="math-sym">Z</span> &middot; 
+                  <span class="math-fraction">
+                    <span class="num"><span class="math-sym">u</span><sub>contact</sub> &minus; <span class="math-sym">c</span><sub>x</sub></span>
+                    <span class="den"><span class="math-sym">f</span><sub>x</sub></span>
+                  </span>
+                </span>
+              </div>
+              <div class="math-row">
+                <span class="math-title-label">Cự ly Euclidean tuyệt đối:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">d</span> = &radic;<span style="border-top: 1.5px solid currentColor; padding-top: 1px;"><span class="math-sym">X</span><sup>2</sup> + <span class="math-sym">h</span><sub>c</sub><sup>2</sup> + <span class="math-sym">Z</span><sup>2</sup></span>
+                </span>
+              </div>
+            </div>
+            <p class="card-text" style="font-size: 0.88rem; color: var(--text-dim);">
+              Trong đó: <span class="math-sym">f</span><sub>x</sub>, <span class="math-sym">f</span><sub>y</sub>, <span class="math-sym">c</span><sub>x</sub>, <span class="math-sym">c</span><sub>y</sub> là tiêu cự và tâm quang học được hiệu chuẩn chính xác từ bàn cờ ChArUco.
+            </p>
+          </div>
+
+          <div class="interactive-card">
+            <div class="card-top-icon">🧭</div>
+            <h3 class="card-title">Bù Rung Lắc Bằng IMU MPU6050 & Lớp Dự Phòng</h3>
+            <p class="card-text">
+              <strong>Hiện tượng động học:</strong> Khi robot tăng tốc, phanh hoặc di chuyển qua bề mặt mấp mô, cụm camera dao động khiến góc chúc <span class="math-sym">&theta;</span> biến thiên liên tục. Việc cố định giá trị <span class="math-sym">&theta;</span> tĩnh sẽ làm kết quả đo khoảng cách bị sai lệch đáng kể.
+            </p>
+            <div style="background: rgba(56, 189, 248, 0.1); border-left: 3px solid var(--accent); padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem;">
+              <strong style="color: var(--accent);">Thuật toán bù góc động:</strong> Cảm biến MPU6050 gắn trực tiếp trên khung camera đo vector trọng lực Trái Đất, kết hợp vận tốc góc qua <strong>Bộ lọc bù (Complementary Filter)</strong> ở tần số 100 Hz:
+              <div style="font-family: var(--font-mono); font-size: 0.88rem; margin-top: 0.4rem; color: var(--accent);">
+                <span class="math-sym">&theta;</span>(<span class="math-sym">t</span>) = 0.98 &middot; (<span class="math-sym">&theta;</span>(<span class="math-sym">t</span> &minus; &Delta;<span class="math-sym">t</span>) + <span class="math-sym">&omega;</span><sub>y</sub> &Delta;<span class="math-sym">t</span>) + 0.02 &middot; <span class="math-sym">&theta;</span><sub>acc</sub>
+              </div>
+            </div>
+            <p class="card-text">
+              <strong>Đối với vật không chạm sàn (mặt bàn, biển báo):</strong> Hệ thống kích hoạt <em>Lớp B (Known-size prior: <span class="math-sym">Z</span> = <span class="math-sym">f</span><sub>y</sub> &middot; <span class="math-sym">H</span><sub>real</sub> / <span class="math-sym">h</span><sub>px</sub>)</em> và <em>Lớp C (Depth Anything V2)</em> lấy mặt sàn IPM làm mỏ neo tỷ lệ hệ mét.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: PHYSICAL SIZE & 3D BBOX -->
+      <div class="tab-pane" id="pillar3">
+        <div class="grid-2">
+          <div class="interactive-card">
+            <div class="card-top-icon">🧊</div>
+            <h3 class="card-title">Chiếu Ngược Tia Sáng (Ray Back-Projection)</h3>
+            <p class="card-text">
+              Khi khoảng cách <span class="math-sym">Z</span> đã được xác định chắc chắn từ mặt phẳng sàn, thuật toán thực hiện nghịch đảo ma trận nội hàm <span class="math-vec">K</span><sup>&minus;1</sup> để chiếu ngược các điểm ảnh biên về không gian 3D Euclidean:
+            </p>
+            <div class="math-eq-box">
+              <div class="math-row">
+                <span class="math-title-label">Chiều cao vật lý thực tế:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">H</span> = <span class="math-sym">Z</span> &middot; 
+                  <span class="math-fraction">
+                    <span class="num"><span class="math-sym">v</span><sub>max</sub> &minus; <span class="math-sym">v</span><sub>min</sub></span>
+                    <span class="den"><span class="math-sym">f</span><sub>y</sub></span>
+                  </span>
+                </span>
+              </div>
+              <div class="math-row">
+                <span class="math-title-label">Bề rộng chiếu ngang biểu kiến:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">W</span><sub>proj</sub> = <span class="math-sym">Z</span> &middot; 
+                  <span class="math-fraction">
+                    <span class="num"><span class="math-sym">u</span><sub>max</sub> &minus; <span class="math-sym">u</span><sub>min</sub></span>
+                    <span class="den"><span class="math-sym">f</span><sub>x</sub></span>
+                  </span>
+                </span>
+              </div>
+            </div>
+            <p class="card-text">
+              Chiều cao <span class="math-sym">H</span> được tính toán chuẩn xác theo đơn vị mét mà không đòi hỏi thông tin kích thước tiên nghiệm.
+            </p>
+          </div>
+
+          <div class="interactive-card">
+            <div class="card-top-icon">🔄</div>
+            <h3 class="card-title">Tách Rời Chiều Rộng (W), Sâu (D) & Hộp Bao 3D</h3>
+            <p class="card-text">
+              Khi vật thể nghiêng góc phương vị <span class="math-sym">&psi;</span> so với quang trục camera, bề rộng quan sát được <span class="math-sym">W</span><sub>proj</sub> chịu sự phụ thuộc của cả chiều rộng <span class="math-sym">W</span> và chiều sâu <span class="math-sym">D</span>:
+            </p>
+            <div class="math-eq-box">
+              <div class="math-row">
+                <span class="math-title-label">Phương trình bện chặt hình học:</span>
+                <span class="math-expr-content">
+                  <span class="math-sym">W</span><sub>proj</sub>(<span class="math-sym">&psi;</span>) = <span class="math-sym">W</span> &middot; |cos <span class="math-sym">&psi;</span>| + <span class="math-sym">D</span> &middot; |sin <span class="math-sym">&psi;</span>|
+                </span>
+              </div>
+            </div>
+            <p class="card-text">
+              <strong>Quy trình phân tách:</strong>
+            </p>
+            <ol style="color: var(--text-muted); font-size: 0.95rem; margin-left: 1.25rem; display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem;">
+              <li>Ước lượng góc phương vị Yaw <span class="math-sym">&psi;</span> dựa trên độ co ngắn phối cảnh của Instance Mask.</li>
+              <li>Áp dụng tỷ lệ khung hình tiên nghiệm theo danh mục COCO (<span class="math-sym">r</span> = <span class="math-sym">W</span> / <span class="math-sym">D</span>, ví dụ chai nước <span class="math-sym">r</span> = 1.0, người <span class="math-sym">r</span> = 2.2).</li>
+              <li>Dựng hoàn chỉnh 8 đỉnh <strong>3D Oriented Bounding Box</strong> trong hệ tọa độ robot.</li>
+            </ol>
+            <p class="card-text" style="color: var(--success); font-weight: 700;">
+              ✓ Xuất bản các topic ROS 2: <code>/perception/detections_3d</code> và đám mây điểm PointCloud tích hợp trực tiếp vào Nav2 Costmap để robot thực hiện tránh vật cản tự động.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: INTERACTIVE LAB SIMULATOR -->
+    <section class="section-wrap" id="interactive-lab">
+      <div class="section-header">
+        <div class="section-eyebrow">
+          <span>03. MÔ PHỎNG HÌNH HỌC TƯƠNG TÁC</span>
+        </div>
+        <h2 class="section-heading">Mô Phỏng Trực Quan Đo Cự Ly Bằng Hình Học Sàn (IPM)</h2>
+        <p class="section-sub">
+          Thực nghiệm thay đổi các tham số lắp đặt camera (chiều cao, góc chúc, điểm tiếp xúc sàn). Kích hoạt chế độ rung lắc để kiểm chứng năng lực ổn định của cảm biến IMU MPU6050.
+        </p>
+      </div>
+
+      <div class="sim-lab">
+        <div class="sim-grid">
+          <!-- CANVAS SIMULATOR -->
+          <div class="canvas-viewport">
+            <canvas id="simCanvas" width="700" height="420"></canvas>
+            <div class="canvas-overlay-hud">
+              <div>Pcam 5C FOV: 65° · Cảm biến: OV5640 5MP</div>
+              <div id="hudStatus">Trạng thái: Ổn định (IMU Active)</div>
+            </div>
+          </div>
+
+          <!-- CONTROLS & TELEMETRY -->
+          <div class="sim-controls-panel">
+            <div class="slider-row">
+              <div class="slider-labels">
+                <span style="color: var(--text-muted);">Chiều cao Camera (<span class="math-sym">h</span><sub>c</sub>):</span>
+                <span class="val-badge" id="lblHeight">0.40 m</span>
+              </div>
+              <input type="range" id="rngHeight" min="0.25" max="0.80" step="0.01" value="0.40">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-labels">
+                <span style="color: var(--text-muted);">Góc chúc Camera Pitch (<span class="math-sym">&theta;</span>):</span>
+                <span class="val-badge" id="lblPitch">15.0°</span>
+              </div>
+              <input type="range" id="rngPitch" min="5" max="30" step="0.5" value="15.0">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-labels">
+                <span style="color: var(--text-muted);">Hàng pixel chạm đất (<span class="math-sym">v</span><sub>contact</sub>):</span>
+                <span class="val-badge" id="lblVcontact">540 px</span>
+              </div>
+              <input type="range" id="rngVcontact" min="400" max="710" step="1" value="540">
+            </div>
+
+            <div class="toggle-row">
+              <span>Bù rung lắc bằng IMU MPU6050</span>
+              <label class="switch">
+                <input type="checkbox" id="chkIMU" checked>
+                <span class="slider-round"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <span>Mô phỏng rung xe (Pitch Jitter)</span>
+              <label class="switch">
+                <input type="checkbox" id="chkJitter">
+                <span class="slider-round"></span>
+              </label>
+            </div>
+
+            <!-- TELEMETRY OUTPUTS -->
+            <div class="telemetry-board">
+              <div class="telem-item">
+                <span class="telem-name">Khoảng cách tiến (<span class="math-sym">Z</span>):</span>
+                <span class="telem-value accent" id="outZ">1.48 m</span>
+              </div>
+              <div class="telem-item">
+                <span class="telem-name">Khoảng cách Euclidean (<span class="math-sym">d</span>):</span>
+                <span class="telem-value" id="outD">1.53 m</span>
+              </div>
+              <div class="telem-item">
+                <span class="telem-name">Góc quang học <span class="math-sym">&alpha;</span>(<span class="math-sym">v</span>):</span>
+                <span class="telem-value" id="outAlpha">+14.2°</span>
+              </div>
+              <div class="telem-item">
+                <span class="telem-name">Độ nhạy sai số (<span class="math-sym">Z</span><sup>2</sup> / (<span class="math-sym">f</span><sub>y</sub> &middot; <span class="math-sym">h</span><sub>c</sub>)):</span>
+                <span class="telem-value success" id="outSensitivity">±6.4 mm/px</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: PIPELINE FLOW -->
+    <section class="section-wrap" id="pipeline-flow">
+      <div class="section-header">
+        <div class="section-eyebrow">
+          <span>04. QUY TRÌNH HỆ THỐNG</span>
+        </div>
+        <h2 class="section-heading">Luồng Dữ Liệu Thời Gian Thực (End-to-End Pipeline)</h2>
+        <p class="section-sub">
+          Dòng chảy dữ liệu tuần tự từ thời điểm cảm biến phơi sáng đến khi bộ điều hướng Nav2 phanh xe an toàn.
+        </p>
+      </div>
+
+      <div class="pipeline-stepper">
+        <!-- STEP 1 -->
+        <div class="step-item">
+          <div class="step-node">01</div>
+          <div class="step-content">
+            <span class="step-badge">NODE 1 · RASPBERRY PI 3</span>
+            <h3 class="step-heading">Thu Nhận Ảnh CSI & Đọc Telemetry IMU Đồng Thời</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Camera Pcam 5C thu nhận ảnh 1280 &times; 720 @ 30 FPS qua giao tiếp MIPI CSI-2. Cảm biến MPU6050 đọc gia tốc và con quay ở tần số 100 Hz qua bus I2C. Dữ liệu ảnh và góc chúc <span class="math-sym">&theta;</span> được đóng gói chung timestamp gửi qua mạng Ethernet tốc độ cao sang Jetson với độ trễ &lt; 15 ms.
+            </p>
+          </div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="step-item">
+          <div class="step-node">02</div>
+          <div class="step-content">
+            <span class="step-badge">NODE 2 · JETSON XAVIER (PRE-PROCESSING)</span>
+            <h3 class="step-heading">Khử Méo Thấu Kính (Brown-Conrady Undistortion)</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Sử dụng ma trận nội hàm <span class="math-vec">K</span> và vector hệ số méo <span class="math-vec">D</span> = [<span class="math-sym">k</span><sub>1</sub>, <span class="math-sym">k</span><sub>2</sub>, <span class="math-sym">p</span><sub>1</sub>, <span class="math-sym">p</span><sub>2</sub>, <span class="math-sym">k</span><sub>3</sub>] (được hiệu chuẩn từ bàn cờ ChArUco) để làm phẳng quang học hình ảnh, đảm bảo mọi tia sáng tuân thủ mô hình camera lỗ kim tuyến tính lý tưởng.
+            </p>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="step-item">
+          <div class="step-node">03</div>
+          <div class="step-content">
+            <span class="step-badge">TENSORRT INFERENCE ENGINE</span>
+            <h3 class="step-heading">Phát Hiện Vật Thể & Trích Xuất Chân Chạm Sàn (YOLOv8-seg)</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Mô hình YOLOv8n-seg TensorRT FP16 chạy trong 6.5 ms, sinh ra nhãn phân loại (person, chair, box...), hộp bao 2D và mặt nạ nhị phân. Thuật toán phân vị đáy trích xuất tọa độ hàng pixel tiếp xúc sàn <span class="math-sym">v</span><sub>contact</sub>, miễn nhiễm hoàn toàn với bóng râm trên sàn.
+            </p>
+          </div>
+        </div>
+
+        <!-- STEP 4 -->
+        <div class="step-item">
+          <div class="step-node">04</div>
+          <div class="step-content">
+            <span class="step-badge">GEOMETRY ENGINE</span>
+            <h3 class="step-heading">Ước Lượng Khoảng Cách IPM Bù Góc Trọng Lực IMU</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Bộ xử lý kết hợp <span class="math-sym">v</span><sub>contact</sub>, chiều cao <span class="math-sym">h</span><sub>c</sub> và góc nghiêng tức thời <span class="math-sym">&theta;</span>(<span class="math-sym">t</span>) từ bộ lọc bù MPU6050 để giải ra khoảng cách dọc trục tiến <span class="math-sym">Z</span> và khoảng cách lệch ngang <span class="math-sym">X</span> với sai số AbsRel &lt; 5% trong dải cự ly 0.5 – 3.0 m.
+            </p>
+          </div>
+        </div>
+
+        <!-- STEP 5 -->
+        <div class="step-item">
+          <div class="step-node">05</div>
+          <div class="step-content">
+            <span class="step-badge">SPATIAL RECONSTRUCTION</span>
+            <h3 class="step-heading">Khôi Phục Kích Thước (W, H, D) & Dựng Hộp Bao 3D</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Thực hiện chiếu ngược tia sáng từ <span class="math-sym">Z</span> để tính chiều cao thực tế <span class="math-sym">H</span>. Giải phương trình bện chặt góc xoay Yaw <span class="math-sym">&psi;</span> để tách rời chiều rộng <span class="math-sym">W</span> và chiều sâu <span class="math-sym">D</span>. Dựng 8 đỉnh hình hộp 3D trong không gian Euclidean.
+            </p>
+          </div>
+        </div>
+
+        <!-- STEP 6 -->
+        <div class="step-item">
+          <div class="step-node">06</div>
+          <div class="step-content">
+            <span class="step-badge">ROS 2 FOXY & NAV2 INTEGRATION</span>
+            <h3 class="step-heading">Xuất Bản Topic ROS 2 & Cập Nhật Nav2 Local Costmap</h3>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+              Hộp 3D được xuất bản qua <code>/perception/detections_3d</code> và <code>/perception/obstacle_pointcloud</code> để đưa vào lớp chướng ngại vật (Voxel Costmap Layer) của Nav2, giúp robot chủ động phanh hoặc vẽ quỹ đạo tránh vật cản an toàn.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: COMPARISON MATRIX -->
+    <section class="section-wrap" id="comparison-matrix">
+      <div class="section-header">
+        <div class="section-eyebrow">
+          <span>05. MA TRẬN ĐỐI CHIẾU</span>
+        </div>
+        <h2 class="section-heading">Bảng Tổng Hợp Chiến Lược & Đặc Tính Kỹ Thuật</h2>
+        <p class="section-sub">
+          Đánh giá so sánh trực tiếp các phương pháp được áp dụng trong toàn bộ hệ thống tài liệu nghiên cứu.
+        </p>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Mục Tiêu Nhận Thức</th>
+              <th>Phương Pháp Trong Dự Án</th>
+              <th>Dữ Liệu Đầu Vào Bắt Buộc</th>
+              <th>Tốc Độ & Độ Chính Xác</th>
+              <th>Giới Hạn & Biện Pháp Khắc Phục</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color: var(--text-main);">Phát hiện vật thể 2D & Chân tiếp xúc</strong></td>
+              <td>YOLOv8n-seg TensorRT FP16 + Lọc phân vị 95% biên đáy</td>
+              <td>Ảnh 720p đã khử méo thấu kính qua ma trận K, D</td>
+              <td><span style="color: var(--success); font-weight: 700;">&gt; 25 FPS</span> (trễ &approx; 6.5ms)<br>Sai số chân: &le; 1&ndash;2 px</td>
+              <td>Tốn tài nguyên GPU Tensor Core; khắc phục bằng cách lượng tử hóa FP16 bán chính xác.</td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--text-main);">Đo khoảng cách vật nằm trên sàn</strong></td>
+              <td>Chiếu phối cảnh ngược (IPM) + Bù góc IMU MPU6050</td>
+              <td>Hàng pixel <span class="math-sym">v</span><sub>contact</sub>, chiều cao <span class="math-sym">h</span><sub>c</sub>, góc chúc <span class="math-sym">&theta;</span>(<span class="math-sym">t</span>)</td>
+              <td><span style="color: var(--success); font-weight: 700;">&gt; 60 FPS</span> (toán giải tích)<br>AbsRel: &lt; 5% (cự ly 0.5–3m)</td>
+              <td>Sai số tăng theo bình phương cự ly (<span class="math-sym">Z</span><sup>2</sup>); giới hạn vùng an toàn phanh xe dưới 3.5 mét.</td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--text-main);">Đo khoảng cách vật không chạm sàn</strong></td>
+              <td>Known-Size Prior & Foundation Metric Depth (Depth Anything V2)</td>
+              <td>Nhãn COCO hoặc bản đồ độ sâu AI + Mỏ neo tỷ lệ sàn</td>
+              <td>Khoảng 15–20 FPS<br>AbsRel: &lt; 10% sau neo tỷ lệ</td>
+              <td>Dễ bị nhầm lẫn khi vật thể lạ bị che khuất; dùng làm tầng kiểm chứng chéo (cross-check).</td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--text-main);">Kích thước thực & 3D Bounding Box</strong></td>
+              <td>Chiếu ngược tia sáng (Ray Back-Projection) + Phân rã Yaw</td>
+              <td>Khoảng cách <span class="math-sym">Z</span>, hộp bao 2D/Mask, tỷ lệ khung hình lớp</td>
+              <td>Thời gian thực đồng bộ cùng tầng phát hiện<br>Sai số chiều cao <span class="math-sym">H</span> &lt; 5%</td>
+              <td>Cần phân loại đúng lớp để lấy tỷ lệ <span class="math-sym">W</span> / <span class="math-sym">D</span>; đã liên kết chặt chẽ với nhãn COCO từ YOLO.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PAGE FOOTER (COMPLETELY STANDALONE) -->
+  <footer class="page-footer">
+    <p style="font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">
+      Mobile Robot Monocular Spatial Vision · Research Documentation Portal
+    </p>
+    <p style="color: var(--text-dim); font-size: 0.82rem;">
+      Tài liệu kỹ thuật trực quan được đúc kết từ toàn bộ hệ thống báo cáo nghiên cứu của dự án.
+    </p>
+  </footer>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // THEME SWITCHER
+    const themeBtn = document.getElementById("themeToggleBtn");
+    const themeIcon = document.getElementById("themeIcon");
+    const themeText = document.getElementById("themeText");
+    const htmlEl = document.documentElement;
+
+    function applyTheme(theme) {
+      htmlEl.setAttribute("data-theme", theme);
+      if (theme === "light") {
+        themeIcon.textContent = "🌙";
+        themeText.textContent = "Tối";
+      } else {
+        themeIcon.textContent = "☀️";
+        themeText.textContent = "Sáng";
+      }
+      localStorage.setItem("msv_theme", theme);
+      drawSimulator();
+    }
+
+    const savedTheme = localStorage.getItem("msv_theme") || "dark";
+    applyTheme(savedTheme);
+
+    themeBtn.addEventListener("click", () => {
+      const cur = htmlEl.getAttribute("data-theme");
+      applyTheme(cur === "dark" ? "light" : "dark");
+    });
+
+    // PILLAR TABS CONTROLLER
+    function switchPillarTab(tabId, btn) {
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.getElementById(tabId).classList.add("active");
+      btn.classList.add("active");
+    }
+
+    // SIMULATOR LAB ENGINE
+    const canvas = document.getElementById("simCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const rngHeight = document.getElementById("rngHeight");
+    const rngPitch = document.getElementById("rngPitch");
+    const rngVcontact = document.getElementById("rngVcontact");
+    const chkIMU = document.getElementById("chkIMU");
+    const chkJitter = document.getElementById("chkJitter");
+
+    const lblHeight = document.getElementById("lblHeight");
+    const lblPitch = document.getElementById("lblPitch");
+    const lblVcontact = document.getElementById("lblVcontact");
+
+    const outZ = document.getElementById("outZ");
+    const outD = document.getElementById("outD");
+    const outAlpha = document.getElementById("outAlpha");
+    const outSensitivity = document.getElementById("outSensitivity");
+    const hudStatus = document.getElementById("hudStatus");
+
+    // Camera OV5640 720p nominal parameters
+    const fy = 910.0;
+    const cy = 360.0;
+
+    let jitterOffset = 0;
+    let animTime = 0;
+
+    function updateSimulation() {
+      const hc = parseFloat(rngHeight.value);
+      let pitchDeg = parseFloat(rngPitch.value);
+      const vContact = parseInt(rngVcontact.value);
+
+      lblHeight.textContent = hc.toFixed(2) + " m";
+      lblPitch.textContent = pitchDeg.toFixed(1) + "°";
+      lblVcontact.textContent = vContact + " px";
+
+      // Jitter simulation
+      if (chkJitter.checked) {
+        animTime += 0.05;
+        const rawJitter = Math.sin(animTime * 4) * 2.8 + Math.cos(animTime * 9) * 1.2;
+        if (chkIMU.checked) {
+          // IMU compensates 95% of jitter
+          jitterOffset = rawJitter * 0.05;
+          hudStatus.textContent = "Trạng thái: Bù rung IMU Active (Lọc bù 98%)";
+          hudStatus.style.color = "var(--success)";
+        } else {
+          // No IMU: severe jitter!
+          jitterOffset = rawJitter;
+          hudStatus.textContent = "CẢNH BÁO: Rung lắc không có IMU bù trừ! Sai số cao!";
+          hudStatus.style.color = "var(--danger)";
+        }
+      } else {
+        jitterOffset = 0;
+        hudStatus.textContent = "Trạng thái: Camera Ổn định";
+        hudStatus.style.color = "var(--accent)";
+      }
+
+      const activePitchDeg = pitchDeg + jitterOffset;
+      const activePitchRad = activePitchDeg * (Math.PI / 180);
+
+      // Optical angle alpha(v)
+      const alphaRad = Math.atan((vContact - cy) / fy);
+      const alphaDeg = alphaRad * (180 / Math.PI);
+
+      const totalAngleRad = activePitchRad + alphaRad;
+
+      let Z = 0;
+      let d = 0;
+      let sensitivityMm = 0;
+
+      if (totalAngleRad > 0.01) {
+        Z = hc / Math.tan(totalAngleRad);
+        d = Math.sqrt(Z * Z + hc * hc);
+        // Error sensitivity: dZ/dv = Z^2 / (fy * hc)
+        const dZ_dv = (Z * Z) / (fy * hc);
+        sensitivityMm = dZ_dv * 1000; // mm per pixel
+      }
+
+      outZ.textContent = Z.toFixed(2) + " m";
+      outD.textContent = d.toFixed(2) + " m";
+      outAlpha.textContent = (alphaDeg >= 0 ? "+" : "") + alphaDeg.toFixed(1) + "°";
+      outSensitivity.textContent = "±" + sensitivityMm.toFixed(1) + " mm/px";
+
+      drawSimulator(hc, activePitchDeg, vContact, Z, d);
+    }
+
+    function drawSimulator(hc = 0.40, pitchDeg = 15.0, vContact = 540, Z = 1.48, d = 1.53) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const isDark = htmlEl.getAttribute("data-theme") === "dark";
+
+      // Clear
+      ctx.clearRect(0, 0, w, h);
+
+      // Background
+      ctx.fillStyle = isDark ? "#060913" : "#f1f5f9";
+      ctx.fillRect(0, 0, w, h);
+
+      // Grid lines
+      ctx.strokeStyle = isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 35) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = 0; y < h; y += 35) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      // Geometry coordinates
+      const groundY = h - 60;
+      const camOriginX = 90;
+      const pixelsPerMeter = 110;
+      const camOriginY = groundY - hc * pixelsPerMeter;
+
+      // Draw Ground plane
+      ctx.strokeStyle = isDark ? "#334155" : "#cbd5e1";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(30, groundY);
+      ctx.lineTo(w - 30, groundY);
+      ctx.stroke();
+
+      // Ground stripes
+      ctx.fillStyle = isDark ? "rgba(56, 189, 248, 0.06)" : "rgba(2, 132, 199, 0.06)";
+      ctx.fillRect(30, groundY, w - 60, 45);
+
+      // Robot Mast
+      ctx.strokeStyle = isDark ? "#475569" : "#94a3b8";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(camOriginX, groundY);
+      ctx.lineTo(camOriginX, camOriginY);
+      ctx.stroke();
+
+      // Robot Base footprint
+      ctx.fillStyle = isDark ? "#1e293b" : "#64748b";
+      ctx.fillRect(camOriginX - 35, groundY - 18, 70, 18);
+
+      // Camera body & Lens
+      ctx.save();
+      ctx.translate(camOriginX, camOriginY);
+      ctx.rotate(pitchDeg * (Math.PI / 180));
+
+      // Lens cone
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath();
+      ctx.moveTo(0, -12);
+      ctx.lineTo(24, -18);
+      ctx.lineTo(24, 18);
+      ctx.lineTo(0, 12);
+      ctx.closePath();
+      ctx.fill();
+
+      // Camera Box
+      ctx.fillStyle = "#0284c7";
+      ctx.fillRect(-22, -14, 22, 28);
+
+      // IMU chip on top of camera
+      ctx.fillStyle = chkIMU.checked ? "#34d399" : "#f87171";
+      ctx.fillRect(-16, -20, 12, 6);
+
+      // Optical Axis line (faint)
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(500, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.restore();
+
+      // Target Obstacle position on floor
+      const objGroundX = camOriginX + Z * pixelsPerMeter;
+      const clampedObjX = Math.min(Math.max(objGroundX, camOriginX + 40), w - 70);
+
+      // Active IPM Ray from camera to ground contact point
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(camOriginX, camOriginY);
+      ctx.lineTo(clampedObjX, groundY);
+      ctx.stroke();
+
+      // Glow on Ray
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.25)";
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(camOriginX, camOriginY);
+      ctx.lineTo(clampedObjX, groundY);
+      ctx.stroke();
+
+      // Obstacle 3D box projection
+      const objWidthPx = 40;
+      const objHeightPx = 65;
+      const objX = clampedObjX - objWidthPx / 2;
+      const objY = groundY - objHeightPx;
+
+      // Obstacle body
+      ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+      ctx.fillRect(objX, objY, objWidthPx, objHeightPx);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(objX, objY, objWidthPx, objHeightPx);
+
+      // Floor contact point marker (v_contact)
+      ctx.fillStyle = "#fbbf24";
+      ctx.beginPath();
+      ctx.arc(clampedObjX, groundY, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Contact Ring pulse
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(clampedObjX, groundY, 11, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Dimension annotations
+      ctx.fillStyle = isDark ? "#f8fafc" : "#0f172a";
+      ctx.font = "bold 12px ui-monospace, monospace";
+      ctx.fillText(`Z = ${Z.toFixed(2)}m`, clampedObjX - 25, groundY + 24);
+      ctx.fillText(`v_contact = ${vContact}px`, clampedObjX - 45, groundY - objHeightPx - 10);
+      ctx.fillText(`hc = ${hc.toFixed(2)}m`, camOriginX - 70, (camOriginY + groundY) / 2);
+    }
+
+    // EVENT LISTENERS
+    [rngHeight, rngPitch, rngVcontact, chkIMU, chkJitter].forEach(el => {
+      el.addEventListener("input", updateSimulation);
+      el.addEventListener("change", updateSimulation);
+    });
+
+    // Animation Loop
+    function animLoop() {
+      if (chkJitter.checked) {
+        updateSimulation();
+      }
+      requestAnimationFrame(animLoop);
+    }
+    updateSimulation();
+    animLoop();
+  </script>
+</body>
+</html>

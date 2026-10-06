@@ -1,0 +1,21 @@
+# Configuration: Raspberry Pi 3 Capture Agent
+# Defines V4L2 device parameters, IMU settings, and network stream target.
+
+device:
+  video_device: "/dev/video0"
+  width: 1280
+  height: 720
+  fps: 30
+  pixel_format: "MJPG"  # Options: MJPG, YUYV
+
+imu:
+  i2c_bus: 1
+  i2c_address: 0x68    # 0x68 (AD0=GND) or 0x69 (AD0=3.3V)
+  sampling_rate_hz: 50 # 50Hz (20ms interval)
+
+stream:
+  # Target IP address (Developer Laptop during Phase 3, or Jetson AGX during Phase 5)
+  target_host: "192.168.1.20"
+  target_port: 9876
+  reconnect_delay_sec: 2.0
+  max_reconnect_attempts: -1  # -1 = infinite retry

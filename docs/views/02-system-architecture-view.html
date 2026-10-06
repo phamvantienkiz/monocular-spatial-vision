@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Architecture & Hardware Topology · Monocular Spatial Vision</title>
+  <style>
+    :root {
+      --bg-base: #0a0d14;
+      --bg-surface: #121722;
+      --bg-surface-elevated: #1a2233;
+      --bg-surface-hover: #222d44;
+      --border-subtle: #232d42;
+      --border-strong: #334261;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.16);
+      --accent-hover: #7dd3fc;
+      --node-cam: #38bdf8;
+      --node-brain: #a855f7;
+      --node-gt: #f43f5e;
+      --node-ros: #10b981;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --accent-hover: #0369a1;
+      --node-cam: #0284c7;
+      --node-brain: #9333ea;
+      --node-gt: #e11d48;
+      --node-ros: #059669;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(8px);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+    .nav-brand .badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      background: rgba(168, 85, 247, 0.15);
+      color: var(--node-brain);
+      border: 1px solid var(--node-brain);
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .nav-link {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent);
+      background: var(--bg-surface-hover);
+    }
+    .btn-toggle {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .container {
+      max-width: 1350px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+      width: 100%;
+    }
+
+    .header-hero {
+      margin-bottom: 2rem;
+    }
+    .header-hero .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--node-brain);
+      margin-bottom: 0.5rem;
+    }
+    .header-hero h1 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .header-hero p {
+      color: var(--text-muted);
+      max-width: 850px;
+      font-size: 1.05rem;
+    }
+
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 1.2rem;
+      background: var(--node-brain);
+      border-radius: 2px;
+    }
+
+    /* Interactive Topology Canvas */
+    .topology-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 1.5rem;
+    }
+    @media (max-width: 1024px) {
+      .topology-container { grid-template-columns: 1fr; }
+    }
+    .diagram-viewport {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .diagram-svg-wrap {
+      width: 100%;
+      height: 480px;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+    }
+    .diagram-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 1rem;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-surface-elevated);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .btn-group {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .btn-ctrl {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 0.25rem 0.6rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    .btn-ctrl:hover { border-color: var(--accent); }
+
+    /* Node Detail Sidebar */
+    .node-sidebar {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .node-sidebar-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      color: var(--accent);
+    }
+    .node-sidebar-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+    .node-spec-list {
+      list-style-type: none;
+      font-size: 0.85rem;
+    }
+    .node-spec-item {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .node-spec-item:last-child { border-bottom: none; }
+    .node-spec-key {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+    .node-spec-val {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Packet Header Inspector */
+    .packet-inspector {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.75rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .packet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .byte-block {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .byte-block:hover, .byte-block.active {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+      transform: translateY(-2px);
+    }
+    .byte-offset {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+    .byte-name {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.8rem;
+      color: var(--text-main);
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+    .byte-type {
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+    .byte-info-box {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    /* ROS 2 Table */
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      margin-bottom: 2.5rem;
+      overflow-x: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      background: var(--bg-surface-elevated);
+    }
+    .code-tag {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      background: var(--tag-bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+    .qos-badge {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: var(--radius-sm);
+    }
+    .qos-sensor { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .qos-reliable { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+
+    /* ADR Box */
+    .adr-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .tradeoff-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+    @media (max-width: 800px) {
+      .tradeoff-grid { grid-template-columns: 1fr; }
+    }
+    .tradeoff-card {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+    }
+    .tradeoff-card.solves { border-top: 3px solid var(--success); }
+    .tradeoff-card.worsens { border-top: 3px solid var(--danger); }
+    .tradeoff-card.change { border-top: 3px solid var(--warning); }
+    .tradeoff-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    footer {
+      margin-top: auto;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    /* SVG Node Styles */
+    .svg-node { cursor: pointer; transition: opacity 0.2s, stroke 0.2s; }
+    .svg-node:hover { opacity: 0.9; stroke-width: 2.5px; }
+  </style>
+</head>
+<body>
+
+  <nav class="top-nav">
+    <a href="index.html" class="nav-brand">
+      <span>MONOCULAR SPATIAL VISION</span>
+      <span class="badge">Architecture Layer</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Portal Home</a>
+      <a href="01-business-roadmap-view.html" class="nav-link">Roadmap & BRD</a>
+      <a href="02-system-architecture-view.html" class="nav-link active">System Architecture</a>
+      <a href="03-ai-perception-pipeline-view.html" class="nav-link">AI & Geometry</a>
+      <a href="04-research-synthesis-report-view.html" class="nav-link">Research Synthesis</a>
+      <a href="05-operator-hud-prototype-view.html" class="nav-link">HUD Prototype</a>
+      <button class="btn-toggle" id="themeToggle" title="Chuyển chế độ sáng/tối">🌓 Theme</button>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="header-hero">
+      <div class="eyebrow">Single Source of Truth · Invariant Specifications</div>
+      <h1>Kiến Trúc Hệ Thống & Topo Triển Khai Phần Cứng</h1>
+      <p>Tổng quan kiến trúc 3 khối vật lý độc lập (Capture Rig, AI Brain, Benchmark Ground Truth), định dạng gói tin nhị phân Binary Frame Header, chuẩn tích hợp ROS 2 FastDDS và quyết định kiến trúc cốt lõi ADR-001.</p>
+    </header>
+
+    <!-- Interactive Topology Canvas -->
+    <h2 class="section-title">Bản Đồ Topo Hệ Thống Tương Tác (Interactive System Topology)</h2>
+    <div class="topology-container">
+      <div class="diagram-viewport">
+        <div class="diagram-svg-wrap" id="svgContainer">
+          <svg width="860" height="460" viewBox="0 0 860 460" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gradPi" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#0369a1" stop-opacity="0.9"/>
+              </linearGradient>
+              <linearGradient id="gradJetson" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#7e22ce" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#6b21a8" stop-opacity="0.9"/>
+              </linearGradient>
+              <linearGradient id="gradLaser" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#be123c" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#9f1239" stop-opacity="0.9"/>
+              </linearGradient>
+              <linearGradient id="gradNav" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#047857" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="#065f46" stop-opacity="0.9"/>
+              </linearGradient>
+              <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#64748b"/>
+              </marker>
+              <marker id="arrow-active" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#38bdf8"/>
+              </marker>
+            </defs>
+
+            <!-- Background Grid Accent -->
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+            </pattern>
+            <rect width="100%" height="100%" fill="url(#grid)"/>
+
+            <!-- Connectors -->
+            <path d="M 240 140 L 350 140" stroke="#38bdf8" stroke-width="2.5" stroke-dasharray="4,4" fill="none" marker-end="url(#arrow-active)"/>
+            <text x="295" y="125" fill="#38bdf8" font-size="11" font-family="monospace" text-anchor="middle">TCP:9876 (1280x720)</text>
+
+            <path d="M 590 140 L 680 140" stroke="#34d399" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+            <text x="635" y="125" fill="#34d399" font-size="11" font-family="monospace" text-anchor="middle">ROS 2 DDS</text>
+
+            <path d="M 470 230 L 470 320" stroke="#f43f5e" stroke-width="2" stroke-dasharray="4,4" fill="none" marker-end="url(#arrow)"/>
+            <text x="495" y="280" fill="#f43f5e" font-size="11" font-family="monospace">Compare GT</text>
+
+            <!-- Node 1: Capture Rig -->
+            <g class="svg-node" id="nodePi" onclick="selectNode('pi')">
+              <rect x="40" y="60" width="200" height="160" rx="12" fill="url(#gradPi)" stroke="#38bdf8" stroke-width="1.5"/>
+              <text x="55" y="90" fill="#ffffff" font-weight="bold" font-size="14">CAPTURE RIG NODE</text>
+              <text x="55" y="110" fill="#bae6fd" font-size="11" font-family="monospace">Raspberry Pi 3 (192.168.1.10)</text>
+              <line x1="55" y1="120" x2="225" y2="120" stroke="rgba(255,255,255,0.2)"/>
+              <text x="55" y="142" fill="#ffffff" font-size="11">📸 Digilent Pcam 5C (OV5640)</text>
+              <text x="55" y="162" fill="#ffffff" font-size="11">🧭 IMU MPU6050 (I2C @ 50Hz)</text>
+              <text x="55" y="182" fill="#ffffff" font-size="11">📦 Binary Packet Packager</text>
+              <text x="55" y="202" fill="#e0f2fe" font-size="10" font-family="monospace">Status: CAPTURING @ 30FPS</text>
+            </g>
+
+            <!-- Node 2: Jetson AGX Xavier -->
+            <g class="svg-node" id="nodeJetson" onclick="selectNode('jetson')">
+              <rect x="350" y="50" width="240" height="180" rx="14" fill="url(#gradJetson)" stroke="#c084fc" stroke-width="2"/>
+              <text x="365" y="80" fill="#ffffff" font-weight="bold" font-size="14">AI COMPUTE BRAIN</text>
+              <text x="365" y="100" fill="#f3e8ff" font-size="11" font-family="monospace">Jetson AGX Xavier 16GB</text>
+              <line x1="365" y1="110" x2="575" y2="110" stroke="rgba(255,255,255,0.2)"/>
+              <text x="365" y="132" fill="#ffffff" font-size="11">⚡ Ingest Ring Buffer (5-frame max)</text>
+              <text x="365" y="152" fill="#ffffff" font-size="11">🧠 YOLOv8-seg (TensorRT FP16)</text>
+              <text x="365" y="172" fill="#ffffff" font-size="11">📐 IPM Geometry Solver + MPU Tilt</text>
+              <text x="365" y="192" fill="#ffffff" font-size="11">🧊 3D Bounding Box Reconstructor</text>
+              <text x="365" y="214" fill="#e9d5ff" font-size="10" font-family="monospace">Latency: ~34ms · VRAM: 3.2GB</text>
+            </g>
+
+            <!-- Node 3: Ground Truth Benchmark -->
+            <g class="svg-node" id="nodeLaser" onclick="selectNode('laser')">
+              <rect x="370" y="320" width="200" height="100" rx="10" fill="url(#gradLaser)" stroke="#fb7185" stroke-width="1.5"/>
+              <text x="385" y="350" fill="#ffffff" font-weight="bold" font-size="13">GROUND TRUTH BENCH</text>
+              <text x="385" y="370" fill="#ffe4e6" font-size="11">🎯 Thước Laser Bosch GLM</text>
+              <text x="385" y="390" fill="#ffe4e6" font-size="11">📏 Độ chính xác: ±1.5 mm</text>
+              <text x="385" y="408" fill="#fecdd3" font-size="10" font-family="monospace">Target AbsRel &le; 5%</text>
+            </g>
+
+            <!-- Node 4: Downstream ROS 2 Nav2 -->
+            <g class="svg-node" id="nodeNav" onclick="selectNode('nav')">
+              <rect x="680" y="60" width="160" height="160" rx="12" fill="url(#gradNav)" stroke="#34d399" stroke-width="1.5"/>
+              <text x="695" y="90" fill="#ffffff" font-weight="bold" font-size="14">NAVIGATION</text>
+              <text x="695" y="110" fill="#d1fae5" font-size="11" font-family="monospace">ROS 2 Foxy Stack</text>
+              <line x1="695" y1="120" x2="825" y2="120" stroke="rgba(255,255,255,0.2)"/>
+              <text x="695" y="145" fill="#ffffff" font-size="11">🗺️ Nav2 Costmap</text>
+              <text x="695" y="170" fill="#ffffff" font-size="11">👁️ RViz2 Telemetry</text>
+              <text x="695" y="195" fill="#a7f3d0" font-size="10" font-family="monospace">/perception/objects_3d</text>
+            </g>
+          </svg>
+        </div>
+        <div class="diagram-controls">
+          <span>Click vào từng Node để xem đặc tả chi tiết</span>
+          <div class="btn-group">
+            <button class="btn-ctrl" onclick="zoomIn()">Zoom +</button>
+            <button class="btn-ctrl" onclick="zoomOut()">Zoom -</button>
+            <button class="btn-ctrl" onclick="resetZoom()">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Node Detail Inspector -->
+      <aside class="node-sidebar" id="nodeSidebar">
+        <h3 class="node-sidebar-title" id="sideTitle">AI COMPUTE BRAIN</h3>
+        <span class="node-sidebar-tag" id="sideTag">Node 2 · Jetson AGX Xavier 16GB</span>
+        <ul class="node-spec-list" id="sideSpecs">
+          <li class="node-spec-item">
+            <span class="node-spec-key">Hệ Điều Hành & Runtime</span>
+            <span class="node-spec-val">Ubuntu 20.04 (JetPack 5.1.x) / CUDA 11.4 / TensorRT 8.5+</span>
+          </li>
+          <li class="node-spec-item">
+            <span class="node-spec-key">Độ Phân Giải Xử Lý</span>
+            <span class="node-spec-val">1280 x 720 (Letterbox 640x640 input YOLO)</span>
+          </li>
+          <li class="node-spec-item">
+            <span class="node-spec-key">Cơ Chế Khử Rung Lắc Sàn</span>
+            <span class="node-spec-val">Bù trừ góc pitch động θ(t) tức thời từ MPU6050</span>
+          </li>
+          <li class="node-spec-item">
+            <span class="node-spec-key">Bảo Vệ Hàng Đợi (Queue Invariant)</span>
+            <span class="node-spec-val">Ring Buffer tối đa 5 frame; tự drop frame cũ khi trễ</span>
+          </li>
+          <li class="node-spec-item">
+            <span class="node-spec-key">Ngân Sách Độ Trễ Suy Luận</span>
+            <span class="node-spec-val">&le; 40 ms/frame (&ge; 25 FPS)</span>
+          </li>
+        </ul>
+      </aside>
+    </div>
+
+    <!-- Packet Inspector -->
+    <h2 class="section-title">Bộ Soi Gói Tin Nhị Phân (Binary Frame Header Inspector — 36 Bytes)</h2>
+    <div class="packet-inspector">
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Gói tin truyền qua TCP Socket gồm 36 bytes Header nhị phân cố định (Big-Endian network order) kèm Image bytes thô:</p>
+      
+      <div class="packet-grid">
+        <div class="byte-block active" onclick="inspectByte(0)">
+          <span class="byte-offset">[0..1]</span>
+          <span class="byte-name">MAGIC</span>
+          <span class="byte-type">uint16 (2B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(1)">
+          <span class="byte-offset">[2..3]</span>
+          <span class="byte-name">VERSION</span>
+          <span class="byte-type">uint16 (2B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(2)">
+          <span class="byte-offset">[4..11]</span>
+          <span class="byte-name">TIMESTAMP</span>
+          <span class="byte-type">int64 (8B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(3)">
+          <span class="byte-offset">[12..15]</span>
+          <span class="byte-name">FRAME_ID</span>
+          <span class="byte-type">uint32 (4B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(4)">
+          <span class="byte-offset">[16..19]</span>
+          <span class="byte-name">PITCH_DEG</span>
+          <span class="byte-type">float32 (4B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(5)">
+          <span class="byte-offset">[20..23]</span>
+          <span class="byte-name">ROLL_DEG</span>
+          <span class="byte-type">float32 (4B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(6)">
+          <span class="byte-offset">[24..27]</span>
+          <span class="byte-name">CAM_HEIGHT</span>
+          <span class="byte-type">uint32 (4B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(7)">
+          <span class="byte-offset">[28..31]</span>
+          <span class="byte-name">W x H</span>
+          <span class="byte-type">uint16x2 (4B)</span>
+        </div>
+        <div class="byte-block" onclick="inspectByte(8)">
+          <span class="byte-offset">[32..35]</span>
+          <span class="byte-name">PAYLOAD_LEN</span>
+          <span class="byte-type">uint32 (4B)</span>
+        </div>
+      </div>
+
+      <div class="byte-info-box" id="byteInfoBox">
+        <div>
+          <strong id="byteFieldName" style="color: var(--accent);">MAGIC (0x5043)</strong>
+          <p id="byteFieldDesc" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Ký hiệu nhận diện giao thức bắt buộc: 'P' (0x50) và 'C' (0x43) biểu trưng cho Pcam.</p>
+        </div>
+        <div style="font-family: var(--font-mono); font-size: 0.8rem; background: var(--bg-surface); padding: 0.4rem 0.8rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+          Struct Format: <span id="byteStructFormat" style="color: var(--success);">>H (Big-Endian unsigned short)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROS 2 Topics Matrix -->
+    <h2 class="section-title">Danh Mục ROS 2 Topics & QoS Profiles (Integration Layer)</h2>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Topic Name</th>
+            <th>Message Type</th>
+            <th>Rate (Hz)</th>
+            <th>QoS Policy</th>
+            <th>Trách Nhiệm & Tiêu Thụ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="code-tag">/perception/mono/image_raw</span></td>
+            <td>sensor_msgs/msg/Image</td>
+            <td>30 Hz</td>
+            <td><span class="qos-badge qos-sensor">BEST_EFFORT · Depth 1</span></td>
+            <td>Luồng ảnh RGB thô giải nén từ Pi 3 cho RViz2 / Debug</td>
+          </tr>
+          <tr>
+            <td><span class="code-tag">/perception/mono/camera_info</span></td>
+            <td>sensor_msgs/msg/CameraInfo</td>
+            <td>30 Hz</td>
+            <td><span class="qos-badge qos-reliable">RELIABLE · TransientLocal</span></td>
+            <td>Ma trận nội suy K và hệ số méo thấu kính D từ calib YAML</td>
+          </tr>
+          <tr>
+            <td><span class="code-tag">/perception/mono/objects_3d</span></td>
+            <td>vision_msgs/msg/Detection3DArray</td>
+            <td>25 Hz</td>
+            <td><span class="qos-badge qos-reliable">RELIABLE · Depth 10</span></td>
+            <td>Danh sách hộp bao 3D (XYZ, LWH, Class) cấp trực tiếp cho Nav2</td>
+          </tr>
+          <tr>
+            <td><span class="code-tag">/perception/mono/telemetry</span></td>
+            <td>geometry_msgs/msg/Vector3Stamped</td>
+            <td>50 Hz</td>
+            <td><span class="qos-badge qos-sensor">BEST_EFFORT · SensorData</span></td>
+            <td>Góc pitch, roll tức thời từ IMU MPU6050 và chiều cao camera hc</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ADR-001 Summary Card -->
+    <h2 class="section-title">Sổ Cái Quyết Định Kiến Trúc (ADR-001)</h2>
+    <div class="adr-box">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+        <h3 style="font-size: 1.15rem; font-weight: 700;">ADR-001: Phân Tách Sandbox Độc Lập & Dùng Camera Đơn Pcam 5C + IMU</h3>
+        <span style="font-family: var(--font-mono); font-size: 0.75rem; background: rgba(52, 211, 153, 0.15); color: var(--success); padding: 0.2rem 0.6rem; border-radius: var(--radius-sm); font-weight: 700;">ACCEPTED</span>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Quyết định thay thế hệ thống stereo 2 camera bằng 1 camera đơn Pcam 5C kết hợp cảm biến gia tốc MPU6050 trên khung thử nghiệm cơ khí tĩnh độc lập.</p>
+      
+      <div class="tradeoff-grid">
+        <div class="tradeoff-card solves">
+          <div class="tradeoff-title" style="color: var(--success);">
+            <span>✓</span> Solves (Giải Quyết)
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            • Triệt tiêu yêu cầu đồng bộ thời gian ngặt nghèo liên-Pi (&Delta;t &lt; 1ms).<br>
+            • Khử ghép kênh sai số giữa quang học và trôi dạt odometry bánh xe.<br>
+            • Bù trừ độ võng giá đỡ bằng góc pitch tức thời từ MPU6050.
+          </p>
+        </div>
+        <div class="tradeoff-card worsens">
+          <div class="tradeoff-title" style="color: var(--danger);">
+            <span>⚠</span> Worsens (Đánh Đổi)
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            • Mất khả năng đo sâu lập thể trực tiếp; xuất hiện Scale Ambiguity.<br>
+            • Không thể dùng thuần hình học IPM cho vật cản treo không chạm sàn.<br>
+            • Rủi ro tương thích driver V4L2 OV5640 trên Raspberry Pi 3.
+          </p>
+        </div>
+        <div class="tradeoff-card change">
+          <div class="tradeoff-title" style="color: var(--warning);">
+            <span>🔄</span> Change It When
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">
+            • Xem xét nâng cấp lên Phase 3 khi Phase 1 đạt chuẩn AbsRel &le; 5%.<br>
+            • Cân nhắc quay lại Stereo nếu môi trường thực tế có quá nhiều vật thể treo lơ lửng không thể neo tỷ lệ bằng LiDAR 2D.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Monocular Spatial Vision · ASIC Lab, Faculty of Computer Engineering, UIT - VNUHCM · 2026
+  </footer>
+
+  <script>
+    // Theme toggle
+    const themeBtn = document.getElementById('themeToggle');
+    const root = document.documentElement;
+    themeBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Node details data
+    const nodeDetails = {
+      pi: {
+        title: "CAPTURE RIG NODE (RASPBERRY PI 3)",
+        tag: "Node 1 · 192.168.1.10 · Edge Sensor Hub",
+        specs: [
+          { key: "Phần Cứng Quang Học", val: "Digilent Pcam 5C (OmniVision OV5640 5MP) qua MIPI CSI-2" },
+          { key: "Cảm Biến Bổ Trợ", val: "MPU6050 (6-DoF) qua I2C /dev/i2c-1 tại tần số 50 Hz" },
+          { key: "Dịch Vụ Thu Nhận", val: "pi_capture_agent daemon (V4L2 MJPEG capture, RAM < 250MB)" },
+          { key: "Giao Thức Mạng", val: "TCP Socket Stream tới port 9876 Jetson AGX qua Ethernet Cat6" }
+        ]
+      },
+      jetson: {
+        title: "AI COMPUTE BRAIN (JETSON AGX XAVIER)",
+        tag: "Node 2 · 192.168.1.20 · Perception Hub",
+        specs: [
+          { key: "Hệ Điều Hành & Runtime", val: "Ubuntu 20.04 (JetPack 5.1.x) / CUDA 11.4 / TensorRT 8.5+" },
+          { key: "Độ Phân Giải Xử Lý", val: "1280 x 720 (Letterbox 640x640 input YOLO)" },
+          { key: "Cơ Chế Khử Rung Lắc Sàn", val: "Bù trừ góc pitch động θ(t) tức thời từ MPU6050" },
+          { key: "Bảo Vệ Hàng Đợi (Queue Invariant)", val: "Ring Buffer tối đa 5 frame; tự drop frame cũ khi trễ" },
+          { key: "Ngân Sách Độ Trễ Suy Luận", val: "≤ 40 ms/frame (≥ 25 FPS)" }
+        ]
+      },
+      laser: {
+        title: "GROUND TRUTH BENCHMARK",
+        tag: "Node 3 · Thước Đo Laser Bosch GLM",
+        specs: [
+          { key: "Độ Chính Xác Cảm Biến", val: "±1.5 mm trên toàn dải đo quang học" },
+          { key: "Phương Thức Căn Chuẩn", val: "Tia laser chiếu trực tiếp từ tâm camera tới đáy chân vật thể" },
+          { key: "Chỉ Số Đánh Giá", val: "AbsRel (Sai số tương đối tuyệt đối) và RMSE (Độ lệch chuẩn)" },
+          { key: "Ngưỡng Đạt Chuẩn (Exit Gate)", val: "AbsRel ≤ 5% trong phạm vi 0.5m - 3.0m" }
+        ]
+      },
+      nav: {
+        title: "DOWNSTREAM NAVIGATION STACK",
+        tag: "ROS 2 Foxy · Nav2 Controller & Costmap",
+        specs: [
+          { key: "Topic Nhận Dữ Liệu", val: "/perception/mono/objects_3d (vision_msgs/Detection3DArray)" },
+          { key: "QoS Middleware", val: "FastDDS Reliable, Depth = 10" },
+          { key: "Tích Hợp Costmap", val: "Chuyển đổi 3D Bounding Box thành Voxel/Costmap Layer" },
+          { key: "Thời Gian Phản Hồi Phanh", val: "≤ 200ms khi phát hiện chướng ngại vật cản đường" }
+        ]
+      }
+    };
+
+    function selectNode(nodeKey) {
+      const data = nodeDetails[nodeKey];
+      if (!data) return;
+      document.getElementById('sideTitle').innerText = data.title;
+      document.getElementById('sideTag').innerText = data.tag;
+      const list = document.getElementById('sideSpecs');
+      list.innerHTML = data.specs.map(s => `
+        <li class="node-spec-item">
+          <span class="node-spec-key">${s.key}</span>
+          <span class="node-spec-val">${s.val}</span>
+        </li>
+      `).join('');
+    }
+
+    // Packet Inspector Details
+    const packetData = [
+      { name: "MAGIC (0x5043)", format: ">H (Big-Endian unsigned short)", desc: "Ký hiệu nhận diện giao thức bắt buộc: 'P' (0x50) và 'C' (0x43) biểu trưng cho Pcam 5C." },
+      { name: "VERSION (0x0001)", format: ">H (uint16)", desc: "Phiên bản cấu trúc header nhị phân (hiện tại v1.0)." },
+      { name: "TIMESTAMP_NS", format: ">q (int64 nanoseconds)", desc: "Tem thời gian phần cứng lúc chụp khung hình (CLOCK_MONOTONIC_RAW) từ Pi 3." },
+      { name: "FRAME_ID", format: ">I (uint32 sequence)", desc: "Số thứ tự tăng dần của frame dùng để phát hiện rớt gói tin trên đường truyền." },
+      { name: "PITCH_DEG", format: ">f (float32 IEEE 754)", desc: "Góc chúc pitch tức thời đo từ gia tốc kế MPU6050 (đơn vị: độ)." },
+      { name: "ROLL_DEG", format: ">f (float32 IEEE 754)", desc: "Góc nghiêng ngang roll tức thời đo từ MPU6050 (đơn vị: độ, kỳ vọng xấp xỉ 0)." },
+      { name: "CAM_HEIGHT_MM", format: ">I (uint32 millimeters)", desc: "Chiều cao danh định từ tâm thấu kính tới sàn (ví dụ 285mm)." },
+      { name: "WIDTH x HEIGHT", format: ">HH (uint16 x 2)", desc: "Kích thước pixel khung hình (mặc định 1280 x 720)." },
+      { name: "PAYLOAD_LENGTH", format: ">I (uint32 bytes)", desc: "Kích thước byte chính xác của khối dữ liệu ảnh nén đi kèm ngay sau header." }
+    ];
+
+    function inspectByte(idx) {
+      document.querySelectorAll('.byte-block').forEach((b, i) => {
+        b.classList.toggle('active', i === idx);
+      });
+      const data = packetData[idx];
+      document.getElementById('byteFieldName').innerText = data.name;
+      document.getElementById('byteFieldDesc').innerText = data.desc;
+      document.getElementById('byteStructFormat').innerText = data.format;
+    }
+
+    // SVG Zoom helpers
+    let zoomLevel = 1;
+    const svgElem = document.querySelector('#svgContainer svg');
+    function zoomIn() { zoomLevel = Math.min(zoomLevel + 0.15, 1.8); applyZoom(); }
+    function zoomOut() { zoomLevel = Math.max(zoomLevel - 0.15, 0.7); applyZoom(); }
+    function resetZoom() { zoomLevel = 1; applyZoom(); }
+    function applyZoom() { svgElem.style.transform = `scale(${zoomLevel})`; svgElem.style.transformOrigin = 'center center'; }
+  </script>
+</body>
+</html>

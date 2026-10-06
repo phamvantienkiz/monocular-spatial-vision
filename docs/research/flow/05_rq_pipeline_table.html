@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bảng Câu Hỏi Nghiên Cứu Tuần Tự (RQ Pipeline Matrix) · Mobile Robot</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-paper-2: #ececec;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08);
+      --color-link:    #2e5aa8;
+      --color-link-tint: rgba(46,90,168,0.08);
+      --color-success: #2b7a4b;
+      --color-success-tint: rgba(43,122,75,0.08);
+      --color-rule:    rgba(45,49,66,0.12);
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 1.5rem;
+    }
+
+    .frame {
+      max-width: 1240px;
+      width: 100%;
+    }
+
+    .header {
+      margin-bottom: 2rem;
+    }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.8rem, 2.8vw + 0.8rem, 2.5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: var(--color-muted);
+      margin-top: 0.4rem;
+      max-width: 900px;
+      line-height: 1.5;
+    }
+
+    .table-container {
+      background: #ffffff;
+      border: 1px solid var(--color-rule);
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+      overflow-x: auto;
+      padding: 0.5rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+      min-width: 980px;
+    }
+
+    thead th {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      background: #fafafa;
+      padding: 1rem 1.25rem;
+      border-bottom: 2px solid var(--color-rule);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--color-rule);
+      transition: background-color 0.15s ease;
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background-color: rgba(45,49,66,0.015);
+    }
+
+    tbody td {
+      padding: 1.25rem;
+      vertical-align: top;
+      line-height: 1.55;
+    }
+
+    /* Column 1: RQ Badge */
+    .rq-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .rq-badge.prereq {
+      background: #eaeaea;
+      color: #333333;
+      border: 1px solid #d0d0d0;
+    }
+
+    .rq-badge.sync {
+      background: var(--color-link-tint);
+      color: var(--color-link);
+      border: 1px solid rgba(46,90,168,0.25);
+    }
+
+    .rq-badge.core {
+      background: var(--color-accent-tint);
+      color: var(--color-accent);
+      border: 1px solid rgba(235,108,54,0.3);
+    }
+
+    .rq-badge.fusion {
+      background: var(--color-success-tint);
+      color: var(--color-success);
+      border: 1px solid rgba(43,122,75,0.25);
+    }
+
+    .rq-role-label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-muted);
+      margin-top: 0.4rem;
+    }
+
+    /* Column 2: Question */
+    .rq-question {
+      font-weight: 600;
+      color: var(--color-ink);
+      font-size: 0.95rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .rq-context {
+      font-size: 0.82rem;
+      color: var(--color-muted);
+      line-height: 1.4;
+    }
+
+    /* Column 3: Measurable Output */
+    .output-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .output-list li {
+      position: relative;
+      padding-left: 1.1rem;
+      margin-bottom: 0.35rem;
+      font-size: 0.86rem;
+      color: #333846;
+    }
+
+    .output-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      top: -0.05rem;
+      color: var(--color-muted);
+      font-weight: bold;
+    }
+
+    .output-metric {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: #f0f0f2;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      color: #202430;
+    }
+
+    /* Column 4: Decision Gate */
+    .gate-card {
+      background: #fdfdfd;
+      border: 1px solid rgba(45,49,66,0.1);
+      border-radius: 6px;
+      padding: 0.75rem 0.9rem;
+      border-left: 3.5px solid var(--color-accent);
+    }
+
+    .gate-condition {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--color-accent);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .gate-action {
+      font-size: 0.84rem;
+      color: #3f4656;
+      line-height: 1.45;
+    }
+
+    .nav-bar {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    .nav-bar a {
+      color: var(--color-link);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    .nav-bar a:hover {
+      border-bottom-color: var(--color-link);
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="header">
+      <p class="eyebrow">Khung Nghiên Cứu Định Lượng · Research Matrix</p>
+      <h1>Bảng Câu Hỏi Nghiên Cứu Tuần Tự (RQ Pipeline Matrix)</h1>
+      <p class="subtitle">Được phát triển từ mô hình chuẩn trong <code>RQ-pipeline.jpg</code>, tối ưu hóa cho bài toán một camera duy nhất (Pcam 5C) kết hợp Jetson AGX Xavier, MPU6050 và LiDAR RPLIDAR S2E.</p>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 110px;">Mã</th>
+            <th style="width: 320px;">Câu hỏi nghiên cứu</th>
+            <th style="width: 290px;">Đầu ra phải đo được</th>
+            <th style="width: 350px;">Gate quyết định</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- ROW 0: RQ0 -->
+          <tr>
+            <td>
+              <span class="rq-badge prereq">RQ0</span>
+              <span class="rq-role-label">Tiên Quyết</span>
+            </td>
+            <td>
+              <div class="rq-question">Làm thế nào kích hoạt driver V4L2 cho Pcam 5C (OV5640) trên Pi 3 và stream video về Jetson AGX Xavier ổn định?</div>
+              <div class="rq-context">Xác thực tầng vật lý CSI-2, giao tiếp I2C kernel unicam và giao thức truyền dẫn độ trễ thấp qua mạng LAN.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Node thiết bị: <span class="output-metric">/dev/video0</span></li>
+                <li>FPS thực tế: <span class="output-metric">&ge; 25 FPS</span> (720p)</li>
+                <li>Tỉ lệ rớt frame: <span class="output-metric">&le; 0.2%</span></li>
+                <li>Băng thông LAN: <span class="output-metric">~8.5 Mbps</span></li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 0 (Phần cứng &amp; Driver)</div>
+                <div class="gate-action">Nếu không xuất hiện <code>/dev/video0</code> hoặc FPS &lt; 20: Kiểm tra chiều cắm cáp FFC 15-pin (mặt tiếp xúc vàng), cấu hình <code>dtoverlay=ov5640</code>, gán <code>gpu_mem=128</code>, chuyển sang nén phần cứng MJPEG/H.264.</div>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ROW 1: RQ1 -->
+          <tr>
+            <td>
+              <span class="rq-badge sync">RQ1</span>
+              <span class="rq-role-label">Đồng Bộ &amp; IMU</span>
+            </td>
+            <td>
+              <div class="rq-question">Làm thế nào đồng bộ thời gian giữa luồng ảnh từ Pcam 5C với telemetry IMU MPU6050 trên Pi 3 và chuyển động robot trên Jetson?</div>
+              <div class="rq-context">Đo lường sai lệch thời gian phơi sáng ảnh và vector trọng lực tức thời để phục vụ bù góc nghiêng.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Sai lệch thời gian: <span class="output-metric">&Delta;t &le; 10 ms</span></li>
+                <li>Jitter truyền thông: <span class="output-metric">&le; 5.0 ms</span></li>
+                <li>Độ trễ toàn trình: <span class="output-metric">&le; 40 ms</span></li>
+                <li>Tần số IMU: <span class="output-metric">100 Hz</span></li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 1 (Đồng Bộ Telemetry)</div>
+                <div class="gate-action">Nếu &Delta;t &gt; 20 ms hoặc Jitter &gt; 10 ms: Đóng gói trực tiếp mẩu tin IMU vào Header gói tin TCP tại Pi 3; kích hoạt đồng bộ PTP (IEEE 1588) hoặc Chrony qua cáp Ethernet Cat6 nối trực tiếp.</div>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ROW 2: RQ2 -->
+          <tr>
+            <td>
+              <span class="rq-badge core">RQ2</span>
+              <span class="rq-role-label">Trọng Tâm Metric</span>
+            </td>
+            <td>
+              <div class="rq-question">Làm thế nào hiệu chuẩn nội hàm camera đơn và tái tạo khoảng cách hệ mét (Z) chính xác khi không có baseline stereo vật lý?</div>
+              <div class="rq-context">Phá vỡ Scale Ambiguity bằng mô hình hình học sàn (IPM) kết hợp bù góc pitch động &theta;(t) từ gia tốc kế MPU6050.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Sai số nội hàm: <span class="output-metric">RMS &le; 0.35 px</span></li>
+                <li>Góc pitch đo bằng IMU: <span class="output-metric">&Delta;&theta; &le; 0.2&deg;</span></li>
+                <li>Khoảng cách 0.5m–2.5m: <span class="output-metric">AbsRel &le; 2.0%</span></li>
+                <li>Khoảng cách 3.0m: <span class="output-metric">AbsRel &le; 2.8%</span></li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 2 (Hiệu Chuẩn &amp; Độ Sâu)</div>
+                <div class="gate-action">Nếu AbsRel &gt; 5% tại cự ly &le; 2.5m: Kiểm tra chiều cao cơ khí h_c; kiểm tra méo biên thấu kính Brown-Conrady; hiệu chuẩn trừ bias tĩnh MPU6050; áp dụng bộ lọc bù Complementary Filter &theta;(t).</div>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ROW 3: RQ3 -->
+          <tr>
+            <td>
+              <span class="rq-badge core">RQ3</span>
+              <span class="rq-role-label">Nhận Thức 3D</span>
+            </td>
+            <td>
+              <div class="rq-question">Làm thế nào kết hợp mạng 2D / Instance Segmentation với hình học chiếu ngược để xác định tọa độ (X, Y, Z), kích thước (W, H, D) và 3D Bbox?</div>
+              <div class="rq-context">Sử dụng mặt nạ phân đoạn để bóc tách chân tiếp xúc sàn thực sự, loại trừ hoàn toàn nhiễu bóng đổ và chân ghế rỗng.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Độ chính xác nhận diện: <span class="output-metric">mAP@50 &ge; 0.70</span></li>
+                <li>Sai lệch chân đáy: <span class="output-metric">&Delta;v &le; 2 px</span></li>
+                <li>Sai số chiều cao H (&le;2.5m): <span class="output-metric">&le; 5.0%</span></li>
+                <li>Tốc độ Jetson: <span class="output-metric">&ge; 25 FPS</span> (TensorRT)</li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 3 (Nhận Thức &amp; Hộp 3D)</div>
+                <div class="gate-action">Không dùng trung điểm đáy 2D Bbox vì dễ bị bóng râm/chân ghế làm lệch &gt; 20%; bắt buộc dùng <code>YOLOv8n-seg</code> TensorRT FP16 kết hợp thuật toán trích xuất phân vị đáy 95th của Instance Mask.</div>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ROW 4: RQ4 -->
+          <tr>
+            <td>
+              <span class="rq-badge sync">RQ4</span>
+              <span class="rq-role-label">Hệ Tọa Độ TF</span>
+            </td>
+            <td>
+              <div class="rq-question">Làm thế nào chuyển đổi vị trí 3D từ camera frame sang robot footprint/world frame và duy trì bộ nhớ ngữ nghĩa không gian (Semantic Memory)?</div>
+              <div class="rq-context">Liên kết cây biến đổi TF chuẩn ROS 2 và bộ lọc EKF theo dõi quỹ đạo vật thể khi thân robot chuyển động xoay/tịnh tiến.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Độ trôi dạt trong map frame: <span class="output-metric">&le; 5 cm</span></li>
+                <li>Tần số cập nhật TF Tree: <span class="output-metric">30 Hz</span></li>
+                <li>Tỉ lệ gán nhãn đúng (ID switch): <span class="output-metric">&lt; 3%</span></li>
+                <li>Độ trễ transform: <span class="output-metric">&le; 5 ms</span></li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 4 (Cây TF &amp; Tracking)</div>
+                <div class="gate-action">Nếu tọa độ vật trong <code>map</code> bị nhảy giật khi robot quay: Kiểm tra đồng bộ timestamp ROS TF; tích hợp bộ lọc EKF 3D tracker làm mượt quỹ đạo tâm vật thể; kiểm tra độ trễ của <code>/odometry/filtered</code>.</div>
+              </div>
+            </td>
+          </tr>
+
+          <!-- ROW 5: RQ5 -->
+          <tr>
+            <td>
+              <span class="rq-badge fusion">RQ5</span>
+              <span class="rq-role-label">Hợp Nhất Robot</span>
+            </td>
+            <td>
+              <div class="rq-question">Robot nên khai thác chuyển động bản thân (Motion Stereo) và hợp nhất đa cảm biến (LiDAR 2D RPLIDAR S2E) như thế nào để chủ động triệt tiêu Scale Ambiguity?</div>
+              <div class="rq-context">Hợp nhất cấp cao tại Giai đoạn 2: khóa chặt chiều rộng và góc xoay bằng tia laser, mở rộng vùng quan sát 3D cho Nav2.</div>
+            </td>
+            <td>
+              <ul class="output-list">
+                <li>Phương sai chiều sâu: <span class="output-metric">&sigma;_Z giảm 50%</span></li>
+                <li>Khớp nối Cam-LiDAR: <span class="output-metric">&le; 3 px</span></li>
+                <li>Phát hiện vật cản ngoài tia laser: <span class="output-metric">Recall &gt; 95%</span></li>
+                <li>Cự ly phanh Nav2: <span class="output-metric">&ge; 0.40 m</span></li>
+              </ul>
+            </td>
+            <td>
+              <div class="gate-card">
+                <div class="gate-condition">Cổng Gate 5 (Sensor Fusion &amp; Nav2)</div>
+                <div class="gate-action">Dùng LiDAR để khóa cứng khoảng cách Z và chiều rộng W; dùng Camera đơn nhận diện chiều cao H, nhận biết ngữ nghĩa và phát hiện vật cản lơ lửng đưa vào 3D Voxel Costmap Layer của Nav2.</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nav-bar">
+      <span>Chuyển sang sơ đồ khác:</span>
+      <a href="01_system_architecture.html">01. Kiến Trúc Hệ Thống</a>
+      <a href="02_perception_pipeline_flow.html">02. Luồng Nhận Thức 3D</a>
+      <a href="03_rq_decision_gates_workflow.html">03. Lưu Đồ Cổng Quyết Định (Flowchart)</a>
+      <a href="04_multi_sensor_fusion_architecture.html">04. Hợp Nhất Đa Cảm Biến</a>
+      <a href="index.html">Về Trang Tổng Hợp Dashboard</a>
+    </div>
+  </div>
+</body>
+</html>
