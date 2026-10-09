@@ -55,3 +55,55 @@ class BinaryFramePacker:
             0,  # reserved
         )
         return header + image_bytes
+
+    @staticmethod
+    def unpack_header(header_bytes: bytes) -> dict:
+        """Unpacks the 36-byte binary header into a dictionary.
+
+        Raises:
+            ValueError: If header length is invalid or magic number does not match.
+        """
+        if len(header_bytes) < HEADER_SIZE:
+            raise ValueError(
+                f"Header length too short: expected {HEADER_SIZE} bytes, got {len(header_bytes)}"
+            )
+
+        (
+            magic,
+            version,
+            frame_id,
+            timestamp_ns,
+            pitch_deg,
+            roll_deg,
+            payload_len,
+            width,
+            height,
+            reserved,
+        ) = struct.unpack(HEADER_FORMAT, header_bytes[:HEADER_SIZE])
+
+        if magic != MAGIC_NUMBER:
+            raise ValueError(
+                f"Invalid magic number: 0x{magic:04X}, expected 0x{MAGIC_NUMBER:04X}"
+            )
+
+        return {
+            "magic": magic,
+            "version": version,
+            "frame_id": frame_id,
+            "timestamp_ns": timestamp_ns,
+            "pitch_deg": pitch_deg,
+            "roll_deg": roll_deg,
+            "payload_len": payload_len,
+            "width": width,
+            "height": height,
+            "reserved": reserved,
+        }
+
+    @classmethod
+    def unpack(cls, packet_bytes: bytes) -> tuple:
+        """Unpacks entire packet returning (header_dict, payload_bytes)."""
+        header = cls.unpack_header(packet_bytes[:HEADER_SIZE])
+        payload_len = header["payload_len"]
+        payload = packet_bytes[HEADER_SIZE : HEADER_SIZE + payload_len]
+        return header, payload
+
