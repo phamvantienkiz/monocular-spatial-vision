@@ -41,6 +41,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
             "height": 720,
             "fps": 30,
             "pixel_format": "MJPG",
+            "rotate_180": True,
         },
         "imu": {
             "i2c_bus": 1,
@@ -55,9 +56,21 @@ def load_config(config_path: str) -> Dict[str, Any]:
         },
     }
 
-    if os.path.exists(config_path):
+    # Search for config file in current directory, parent dirs, or relative to module root
+    search_paths = [
+        config_path,
+        os.path.join("..", "..", config_path),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", config_path),
+    ]
+    resolved_path = None
+    for p in search_paths:
+        if os.path.exists(p):
+            resolved_path = p
+            break
+
+    if resolved_path:
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(resolved_path, "r", encoding="utf-8") as f:
                 loaded = yaml.safe_load(f)
                 if isinstance(loaded, dict):
                     for section, values in loaded.items():
@@ -65,13 +78,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
                             default_config[section].update(values)
                         else:
                             default_config[section] = values
-            logger.info("Loaded configuration from %s", config_path)
+            logger.info("Loaded configuration from %s", resolved_path)
         except Exception as e:
-            logger.warning("Could not load config from %s: %s. Using defaults.", config_path, e)
+            logger.warning("Could not load config from %s: %s. Using defaults.", resolved_path, e)
     else:
         logger.info("Config file %s not found. Using defaults.", config_path)
 
     return default_config
+
 
 
 def run_snapshot(config: Dict[str, Any], output_path: str) -> None:
@@ -86,7 +100,9 @@ def run_snapshot(config: Dict[str, Any], output_path: str) -> None:
         height=int(dev_cfg.get("height", 720)),
         fps=int(dev_cfg.get("fps", 30)),
         pixel_format=dev_cfg.get("pixel_format", "MJPG"),
+        rotate_180=bool(dev_cfg.get("rotate_180", True)),
     )
+
 
     if not cam.open():
         logger.error("Failed to open camera for snapshot.")
@@ -227,7 +243,9 @@ def run_preview(config: Dict[str, Any], port: int = 8080) -> None:
         height=int(dev_cfg.get("height", 720)),
         fps=int(dev_cfg.get("fps", 30)),
         pixel_format=dev_cfg.get("pixel_format", "MJPG"),
+        rotate_180=bool(dev_cfg.get("rotate_180", True)),
     )
+
     if not cam.open():
         logger.error("Failed to open camera for preview server.")
         sys.exit(1)
@@ -442,7 +460,9 @@ def run_stream(
         height=height,
         fps=target_fps,
         pixel_format=dev_cfg.get("pixel_format", "MJPG"),
+        rotate_180=bool(dev_cfg.get("rotate_180", True)),
     )
+
     if not cam.open():
         logger.error("Failed to open camera device.")
         sys.exit(1)
@@ -641,6 +661,8 @@ Examples:
     parser.add_argument("--port", type=int, default=None, help="Target ingest port (overrides config)")
     parser.add_argument("--device", default=None, help="Camera device path (e.g. /dev/video0, overrides config)")
     parser.add_argument("--preview-port", type=int, default=8080, help="HTTP preview server port (default: 8080)")
+    parser.add_argument("--rotate-180", dest="rotate_180", action="store_true", default=None, help="Rotate image 180 degrees")
+    parser.add_argument("--no-rotate", dest="rotate_180", action="store_false", help="Do not rotate image")
 
     args = parser.parse_args()
     config = load_config(args.config)
@@ -648,6 +670,9 @@ Examples:
     # CLI parameter overrides
     if args.device:
         config["device"]["video_device"] = args.device
+    if args.rotate_180 is not None:
+        config["device"]["rotate_180"] = args.rotate_180
+
 
     logger.info("Selected mode: %s", args.mode)
 

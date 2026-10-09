@@ -46,3 +46,23 @@ def test_camera_driver_mocked_capture():
         assert cam._is_opened is False
         assert cam._cap is None
 
+
+def test_camera_driver_rotate_180():
+    """Validates that cv2.flip is called when rotate_180=True."""
+    mock_cv2 = MagicMock()
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = True
+
+    dummy_frame = np.ones((720, 1280, 3), dtype=np.uint8)
+    mock_cap.read.return_value = (True, dummy_frame)
+    mock_cv2.flip.return_value = dummy_frame
+
+    with patch.dict("sys.modules", {"cv2": mock_cv2}):
+        cam = CameraDriver(device=0, rotate_180=True)
+        cam._cap = mock_cap
+        cam._is_opened = True
+
+        cam.read_frame(encode_jpeg=False)
+        mock_cv2.flip.assert_called_once_with(dummy_frame, -1)
+
+

@@ -6,7 +6,8 @@ device:
   width: 1280
   height: 720
   fps: 30
-  pixel_format: "MJPG"  # Options: MJPG, YUYV
+  pixel_format: "MJPG"  # Options: MJPG, YUYV, UYVY
+  rotate_180: true      # Set to true for Pcam 5C mounted with CSI ribbon at bottom
 
 imu:
   i2c_bus: 1

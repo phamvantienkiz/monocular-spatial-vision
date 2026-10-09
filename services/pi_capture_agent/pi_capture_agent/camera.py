@@ -52,6 +52,7 @@ class CameraDriver:
         fps: int = 30,
         pixel_format: str = "MJPG",
         buffer_size: int = 1,
+        rotate_180: bool = False,
     ):
         """Initializes CameraDriver configuration.
 
@@ -62,6 +63,7 @@ class CameraDriver:
             fps: Desired capture frame rate (default: 30).
             pixel_format: Camera pixel format ("MJPG", "UYVY", or "YUYV").
             buffer_size: OpenCV internal V4L2 buffer size (1 minimizes latency).
+            rotate_180: Rotate frames by 180 degrees (for inverted Pcam 5C mounting).
         """
         self.device = device
         self.width = width
@@ -69,6 +71,8 @@ class CameraDriver:
         self.fps = fps
         self.pixel_format = pixel_format.upper()
         self.buffer_size = buffer_size
+        self.rotate_180 = rotate_180
+
 
         self.media_device: Optional[str] = None
         self.sensor_entity: Optional[str] = None
@@ -208,7 +212,12 @@ class CameraDriver:
             logger.warning("Failed to grab frame from camera.")
             return timestamp_ns, None, None
 
+        if self.rotate_180:
+            # -1 flips around both X and Y axes, rotating frame by 180 degrees
+            frame = cv2.flip(frame, -1)
+
         jpeg_bytes: Optional[bytes] = None
+
         if encode_jpeg:
             encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
             success, enc_buf = cv2.imencode(".jpg", frame, encode_params)
