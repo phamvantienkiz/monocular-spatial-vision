@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Monocular Perception Backend on %s:%d...", settings.api_host, settings.api_port)
 
     # Startup hooks
-    # TODO for Students: Start ingest_service.start() and model_service.load_model()
+    ingest_service.start()
     yield
 
     # Shutdown hooks
