@@ -33,12 +33,14 @@ class CameraDriver:
         self._cap = None
         self._is_opened = False
         self._frame_count = 0
+        self.is_synthetic_active = mock_mode
 
     def open(self) -> bool:
         """Opens camera device and sets resolution and codec."""
         if self.mock_mode:
             logger.info("CameraDriver initialized in MOCK mode.")
             self._is_opened = True
+            self.is_synthetic_active = True
             return True
 
         try:
@@ -55,6 +57,7 @@ class CameraDriver:
                 logger.warning("Could not open V4L2 camera %s. Falling back to synthetic mock.", self.device)
                 self.mock_mode = True
                 self._is_opened = True
+                self.is_synthetic_active = True
                 return True
 
             # Configure resolution
@@ -148,6 +151,7 @@ class CameraDriver:
             raise RuntimeError("CameraDriver is not opened. Call open() first.")
 
         if self.mock_mode or self._cap is None:
+            self.is_synthetic_active = True
             return self._generate_synthetic_frame()
 
         import cv2
@@ -155,8 +159,11 @@ class CameraDriver:
         ts_ns = time.time_ns()
         ret, frame = self._cap.read()
         if not ret or frame is None:
+            self.is_synthetic_active = True
             logger.warning("Failed to grab frame from %s. Returning synthetic fallback.", self.device)
             return self._generate_synthetic_frame()
+
+        self.is_synthetic_active = False
 
         # Compress to JPEG
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]

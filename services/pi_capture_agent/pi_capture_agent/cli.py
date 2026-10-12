@@ -63,16 +63,25 @@ def run_diag(device: str, width: int, height: int, i2c_bus: int, i2c_addr: int) 
     print(f"\n[2/2] Probing Camera Device {device} ({width}x{height})...")
     cam = CameraDriver(device=device, width=width, height=height, fps=30)
     if cam.open():
-        print(f"  -> [PASS] Camera opened successfully.")
+        print(f"  -> [PASS] Camera device node opened.")
         # Grab 5 test frames to verify frame acquisition rate
         times = []
+        hardware_ok = True
         for _ in range(5):
             t0 = time.time()
             cam.read_frame()
+            if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
+                hardware_ok = False
             times.append(time.time() - t0)
-        avg_time = sum(times) / len(times)
-        fps = 1.0 / avg_time if avg_time > 0 else 0
-        print(f"  -> Capture benchmark: {avg_time * 1000:.1f}ms per frame (~{fps:.1f} FPS)")
+
+        if not hardware_ok:
+            print("  -> [FAIL] Device /dev/video0 is present, but NO physical frames could be captured from sensor!")
+            print("            (Software fell back to synthetic mock images. OV5640 hardware is offline).")
+            all_passed = False
+        else:
+            avg_time = sum(times) / len(times)
+            fps = 1.0 / avg_time if avg_time > 0 else 0
+            print(f"  -> [PASS] Physical frames acquired: {avg_time * 1000:.1f}ms per frame (~{fps:.1f} FPS)")
         cam.release()
     else:
         print("  -> [FAIL] Camera device failed to open.")
@@ -102,19 +111,30 @@ def run_snapshot(device: str, width: int, height: int, output_path: str, i2c_bus
         cam.read_frame()
 
     ts_ns, frame, jpeg_bytes = cam.read_frame()
+    is_synth = getattr(cam, "is_synthetic_active", False) or cam.mock_mode
     cam.release()
 
     if frame is not None:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         cv2.imwrite(output_path, frame)
-        logger.info(
-            "Snapshot saved to %s (Res: %dx%d, Pitch: %.2f°, Roll: %.2f°)",
-            output_path,
-            frame.shape[1],
-            frame.shape[0],
-            pitch,
-            roll,
-        )
+        if is_synth:
+            logger.warning(
+                "[NOTICE] Snapshot saved to %s is a SYNTHETIC FALLBACK (Res: %dx%d, Pitch: %.2f°, Roll: %.2f°). Sensor is offline.",
+                output_path,
+                frame.shape[1],
+                frame.shape[0],
+                pitch,
+                roll,
+            )
+        else:
+            logger.info(
+                "Snapshot saved to %s (Res: %dx%d, Pitch: %.2f°, Roll: %.2f°)",
+                output_path,
+                frame.shape[1],
+                frame.shape[0],
+                pitch,
+                roll,
+            )
     else:
         logger.error("Failed to capture valid frame.")
 
