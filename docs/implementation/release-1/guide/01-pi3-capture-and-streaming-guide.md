@@ -59,16 +59,20 @@ uname -m
 # 64-bit: aarch64 (khuyến nghị cho hiệu năng tối đa)
 
 # 3. Kiểm tra tình trạng throttling phần cứng và nhiệt độ CPU
-vcgencmd get_throttling
-# Kết quả 'throttled=0x0' -> Nguồn điện tốt, không bị sụt áp, nhiệt độ ổn định.
-# Nếu khác 0x0 (như 0x50000 hoặc 0x50005) -> Cần đổi củ sạc 5V/2.5A và tản nhiệt.
+# Lưu ý: Trên Debian 12 (Bookworm) & 13 (Trixie) với nhân kernel 6.x, vcgencmd cần chạy với sudo:
+sudo vcgencmd get_throttling
+# Hoặc kiểm tra trực tiếp qua sysfs của kernel:
+cat /sys/devices/platform/soc/soc:firmware/get_throttled 2>/dev/null || true
+# Kết quả mong đợi: 'throttled=0x0' (hoặc '0') -> Nguồn điện tốt, không bị sụt áp, không quá nhiệt.
+# Nếu khác 0x0 (như 0x50000 hoặc 0x50005) -> Cần đổi nguồn 5V/2.5A và bổ sung tản nhiệt.
 vcgencmd measure_temp
 
 # 4. Kiểm tra RAM và phân vùng Swap
 free -h
-# Pi 3 có tổng RAM 1GB (khoảng 920MB khả dụng). Swap mặc định thường là 100MB.
+# Pi 3 Model B+ có 1GB LPDDR2 (khoảng 920MB hiển thị).
+# Nếu Swap đã đạt ~1GB (919MiB khả dụng) như trường hợp của bạn, hệ thống đã sẵn sàng, không cần chỉnh swap thêm.
 
-# 5. Kiểm tra phiên bản Python toàn cục
+# 5. Kiểm tra phiên bản Python toàn cục & thư viện apt sẵn có
 python3 --version
 which python3
 pip list
@@ -78,44 +82,44 @@ pip list
 
 ## 3. Dọn Dẹp Rác & Tối Ưu Hóa Hệ Thống Headless (Housekeeping)
 
-Vì Raspberry Pi 3 có tài nguyên hạn chế (1GB RAM, 4 lõi Cortex-A53), ta cần dọn dẹp và tối ưu hóa hệ thống để dành trọn vẹn RAM/CPU cho tác vụ capture và stream video:
+Dựa trên kết quả audit thực tế trên Debian 13 (Trixie), hệ thống có một số dịch vụ nền và package Desktop gây hao tổn RAM và làm chậm khởi động. Hãy chạy các bước dọn dẹp sau:
 
 ```bash
-# 1. Cập nhật danh mục gói và dọn dẹp các thư viện mồ côi
-sudo apt-get update
-sudo apt-get autoremove -y
-sudo apt-get clean
+# 1. Tắt dịch vụ cloud-init (thủ phạm ngốn 15-20 giây lúc boot và chiếm RAM nền trên Pi)
+sudo systemctl stop cloud-init cloud-init-local cloud-config cloud-final 2>/dev/null || true
+sudo systemctl disable cloud-init cloud-init-local cloud-config cloud-final 2>/dev/null || true
+sudo mkdir -p /etc/cloud && sudo touch /etc/cloud/cloud-init.disabled
 
-# 2. Tắt các dịch vụ nền không dùng cho Mobile Robot
-# Tắt Bluetooth daemon (nếu không dùng)
-sudo systemctl stop bluetooth
-sudo systemctl disable bluetooth
-sudo systemctl stop hciuart
-sudo systemctl disable hciuart
+# 2. Gỡ bỏ các ứng dụng GUI Desktop và dịch vụ in ấn thừa thãi
+sudo apt-get purge -y thonny cups cupshelpers 2>/dev/null || true
 
-# Tắt dịch vụ in ấn CUPS (nếu có cài trên bản Desktop)
-sudo systemctl stop cups 2>/dev/null || true
-sudo systemctl disable cups 2>/dev/null || true
+# 3. Tắt Bluetooth daemon và giao tiếp UART Bluetooth (nếu robot chỉ dùng Ethernet/WiFi)
+sudo systemctl stop bluetooth hciuart 2>/dev/null || true
+sudo systemctl disable bluetooth hciuart 2>/dev/null || true
 
-# 3. Chuyển sang khởi động chế độ Console (Tắt Desktop GUI để tiết kiệm ~200MB RAM)
+# 4. Tắt Desktop GUI Display Manager (Chuyển hẳn sang chế độ Console Headless để giải phóng ~200MB RAM)
 sudo systemctl set-default multi-user.target
 
-# 4. (Tùy chọn) Tăng Swap tạm thời lên 1GB để tránh lỗi OOM khi cài thư viện Python
-sudo dphys-swapfile swapoff
-sudo sed -i 's/CONF_SWAPSIZE=100/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
-sudo dphys-swapfile setup
-sudo dphys-swapfile swapon
+# 5. Dọn dẹp package mồ côi và làm sạch cache apt
+sudo apt-get autoremove -y --purge
+sudo apt-get clean
+
+# 6. Kiểm tra lại mức tiêu thụ RAM sau dọn dẹp
 free -h
+# Mức tiêu thụ RAM lý tưởng sau khi dọn dẹp ở trạng thái nghỉ: used ~ 80MB - 120MB.
 ```
 
 ---
 
 ## 4. Tạo Không Gian Làm Việc, Clone Repo & Thiết Lập Môi Trường Ảo Cô Lập
 
-Tuân thủ nghiêm ngặt quy định tại [AGENTS.md](file:///E:/UIT/monocular-spatial-vision/AGENTS.md): **Tuyệt đối không cài đặt gói pip vào môi trường toàn cục (system environment)**.
+Tuân thủ nghiêm ngặt quy định tại [AGENTS.md](file:///E:/UIT/monocular-spatial-vision/AGENTS.md) và cơ chế PEP 668 (`EXTERNALLY-MANAGED`) trên Debian 13: **Tuyệt đối không chạy `pip install` thẳng vào Python toàn cục**.
+
+> [!TIP]
+> **Kinh nghiệm thực địa với ARMv7 (32-bit):** Trong `pip list` toàn cục của bạn đã có sẵn bản build `opencv 4.10.0` và `picamera2 0.3.37` được tối ưu phần cứng từ apt. Khi tạo virtual environment với cờ `--system-site-packages`, môi trường ảo sẽ kế thừa ngay lập tức thư viện OpenCV tối ưu này mà **không phải tốn hàng chục phút biên dịch lại từ mã nguồn trên vi xử lý Cortex-A53 của Pi 3**, đồng thời vẫn bảo đảm tính cô lập cho toàn bộ code và dependencies còn lại!
 
 ```bash
-# 1. Cài đặt các công cụ phát triển cơ bản và thư viện hệ thống
+# 1. Cài đặt các công cụ phát triển cơ bản và tiện ích phần cứng
 sudo apt-get install -y git python3-venv python3-pip i2c-tools v4l-utils libv4l-dev
 
 # 2. Phân quyền truy cập phần cứng I2C và Camera cho user hiện tại (tránh phải dùng sudo khi chạy code)
@@ -125,24 +129,25 @@ sudo usermod -aG video,i2c $USER
 mkdir -p ~/workspaces
 cd ~/workspaces
 
-# Clone repo từ Git (sử dụng link repo của dự án)
+# Clone repo từ Git (chuyển sang branch dự án tương ứng, ví dụ branch 'jin')
 git clone https://github.com/<your-org>/monocular-spatial-vision.git
 cd monocular-spatial-vision
+git checkout jin
 
-# 4. Khởi tạo môi trường ảo Python biệt lập (.venv)
-python3 -m venv .venv
+# 4. Khởi tạo môi trường ảo Python kế thừa site-packages tối ưu
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 
 # Xác nhận đường dẫn Python trỏ chính xác vào .venv
 which python
-# Kết quả mong đợi: /home/pi/workspaces/monocular-spatial-vision/.venv/bin/python
+# Kết quả mong đợi: /home/r3b/workspaces/monocular-spatial-vision/.venv/bin/python
 
 # 5. Cài đặt các thư viện cần thiết trong môi trường ảo
 pip install --upgrade pip setuptools wheel
 cd services/pi_capture_agent
 pip install -e .
 # Hoặc cài đặt thủ công:
-pip install opencv-python-headless smbus2 pyyaml numpy
+pip install pyyaml smbus2
 ```
 
 ---
