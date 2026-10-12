@@ -170,12 +170,26 @@ sudo raspi-config nonint do_i2c 0
 CONFIG_FILE="/boot/firmware/config.txt"
 [ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="/boot/config.txt"
 
-sudo bash -c "cat >> $CONFIG_FILE" << 'EOF'
-
 # --- Monocular Spatial Vision Sensor Configuration ---
+# 1. Tắt tự động nhận diện camera chính hãng để nhường quyền điều khiển cho overlay ov5640
+camera_auto_detect=0
+
+# 2. Bật I2C cho MPU6050 (i2c_arm) và I2C cho Camera CSI (i2c_vc)
 dtparam=i2c_arm=on
+dtparam=i2c_vc=on
+
+# 3. Kích hoạt dồn kênh I2C và xung nhịp clock 24MHz cho cổng camera CSI
+dtoverlay=i2c0mux-enable
+dtoverlay=cam1clk-enable
+
+# 4. TẠO THIẾT BỊ OV5640 TRƯỚC (sinh ra node /soc/i2c0mux/i2c@1/ov5640@3c)
 dtoverlay=ov5640
-# Cấp phát 128MB RAM cho GPU VideoCore để xử lý camera mượt mà
+
+# 5. CẤP NGUỒN CHO OV5640 SAU (gắn cam1_regulator/PWUP vào node ov5640 vừa tạo)
+# LƯU Ý BẮT BUỘC: ov5640-supply PHẢI nằm SAU ov5640 trong config.txt!
+dtoverlay=ov5640-supply
+
+# 6. Cấp phát 128MB RAM cho GPU VideoCore để xử lý camera mượt mà
 gpu_mem=128
 EOF
 
@@ -212,18 +226,87 @@ i2cdetect -y 1
 ```bash
 # 1. Kiểm tra kernel log nạp chip OV5640
 dmesg | grep -i ov5640
-# Kết quả mong đợi: ov5640 10-003c: OV5640 probed successfully (hoặc ov5640 driver bound)
 
-# 2. Liệt kê các node video
+# 2. Liệt kê các node video do unicam tạo ra
 v4l2-ctl --list-devices
-# Kết quả mong đợi xuất hiện:
-# bcm2835-unicam (platform:unicam-v4l2):
-#     /dev/video0
 
-# 3. Kiểm tra các định dạng nén phần cứng và phân giải
+# 3. Kiểm tra các định dạng nén và thô hỗ trợ
 v4l2-ctl -d /dev/video0 --list-formats-ext
-# Xác nhận hỗ trợ định dạng 'MJPG' hoặc 'YUYV' tại 1280x720 @ 30fps
 ```
+
+---
+
+### 6.3. Khắc Phục Lỗi Thực Địa: `ov5640_write_reg: error: reg=3008, val=82`
+
+Nếu `dmesg | grep -i ov5640` xuất hiện dòng lỗi:
+```text
+ov5640 10-003c: ov5640_write_reg: error: reg=3008, val=82
+```
+**Bản chất kỹ thuật chuẩn xác của lỗi:**
+1. **Lệnh gửi:** Driver `ov5640` trong kernel gửi lệnh Software Reset (ghi giá trị `0x82` vào thanh ghi `0x3008` - `OV5640_REG_SYS_CTRL0`) ngay trong hàm `ov5640_probe()`.
+2. **Nguyên nhân thất bại:** Chip Pcam 5C **không gửi lại tín hiệu ACK (I2C NACK / EIO)** trên bus I2C số 10.
+3. **Hiểu lầm phổ biến về ký tự `UU`:**
+   * Khi chạy `sudo i2cdetect -y 10`, bạn thấy `UU` tại `0x3c` $\to$ **Điều này KHÔNG CÓ NGHĨA là phần cứng đã thông!**
+   * Ký tự `UU` (*Unit in Use*) chỉ biểu thị rằng Device Tree đã gán địa chỉ `0x3c` cho module kernel `ov5640`. Tiện ích `i2cdetect` khi thấy địa chỉ đã có driver chiếm giữ sẽ **tự động bỏ qua không phát xung thăm dò vật lý** và in thẳng chữ `UU`.
+   * Do đó, dù cáp camera bị đứt hay rút ra hoàn toàn, `i2cdetect` vẫn sẽ hiển thị `UU` nếu overlay đã được nạp!
+
+---
+
+### Quy trình 4 bước cô lập và giải quyết triệt để lỗi:
+
+#### Bước 1: Gỡ Driver để Thăm Dò Tín Hiệu Vật Lý Thực Tế
+Để kiểm tra xem chip OV5640 trên bo Pcam 5C có thực sự có điện và trả lời xung I2C hay không, bạn cần gỡ module kernel để giải phóng địa chỉ `0x3c`:
+```bash
+# 1. Gỡ tạm thời driver ov5640 khỏi nhân
+sudo rmmod ov5640
+
+# 2. Bây giờ chạy i2cdetect sẽ gửi xung điện thực qua dây cáp:
+sudo i2cdetect -y 10
+```
+* **Kịch bản A (Phần cứng TỐT):** Xuất hiện số `3c` tại hàng 30 cột c. $\to$ Phần cứng đã có điện, lỗi nằm ở thứ tự overlay hoặc clock MCLK trong cấu hình Device Tree.
+* **Kịch bản B (Phần cứng MẤT ĐIỆN / HỞ MẠCH):** Toàn bộ bảng là `--` (kể cả ô `3c`). $\to$ **Khẳng định 100% cảm biến đang không có nguồn hoặc cáp cắm sai / lỏng chân.** Hãy chuyển ngay sang Bước 2!
+
+#### Bước 2: Kiểm Tra & Cắm Lại Cáp FFC 15-pin (Nguyên nhân chiếm 85%)
+1. Tắt nguồn Pi 3 hoàn toàn và rút adapter 5V:
+   ```bash
+   sudo poweroff
+   ```
+2. **Đầu cắm phía Digilent Pcam 5C:**
+   - Đầu nối trên board Pcam 5C là dạng *bottom-load, top-contact*.
+   - **Mặt chân tiếp xúc bằng kim loại/đồng phải hướng về phía MẶT BO MẠCH PCAM 5C** (mặt có linh kiện và ống kính).
+   - Mặt nhựa gia cường màu xanh/đen hướng ra ngoài.
+   - Nhẹ nhàng kéo khóa ngàm đen ra, đút cáp ngập sâu, thẳng góc và ấn đều hai bên ngàm khóa lại.
+3. **Đầu cắm phía Raspberry Pi 3:**
+   - Cổng CSI nằm giữa cổng HDMI và giắc 3.5mm.
+   - **Mặt chân tiếp xúc bằng kim loại/đồng phải hướng về phía CỔNG HDMI**.
+   - Mặt nhựa gia cường màu xanh hướng về phía giắc cắm âm thanh 3.5mm / cổng Ethernet.
+4. **Kiểm tra chân 11 (`PWUP`) & chân 15 (`3V3`):**
+   - Chân 11 (`PWUP` - Power Up) kích hoạt các IC hạ áp LDO (1.5V, 1.8V, 2.8V) trên board Pcam 5C.
+   - Chân 15 cấp nguồn 3.3V chính từ Pi sang Pcam 5C.
+   - Vì 2 chân này nằm ở mép ngoài của dải cáp 15 chân, chỉ cần cáp bị cắm lệch nghiêng 0.3mm là bo Pcam 5C sẽ mất hoàn toàn nguồn điện!
+
+#### Bước 3: Kiểm Tra Nội Dung Overlays & Trạng Thái GPIO
+Để xác định các overlay của bạn có điều khiển đúng chân nguồn `PWUP` và xung nhịp `MCLK 24MHz` hay không, chạy lệnh giải mã (decompile):
+```bash
+# Kiểm tra cấu trúc overlay OV5640 và nguồn:
+dtc -I dtb -O dts /boot/firmware/overlays/ov5640.dtbo | head -n 45
+dtc -I dtb -O dts /boot/firmware/overlays/ov5640-supply.dtbo | head -n 45
+
+# Kiểm tra trạng thái các chân GPIO trong kernel debugfs:
+sudo cat /sys/kernel/debug/gpio
+```
+
+#### Bước 4: Kiểm Tra Sau Khi Nạp Lại Driver
+Sau khi kiểm tra cáp và bật máy lại:
+```bash
+# Nạp lại driver:
+sudo modprobe ov5640
+
+# Kiểm tra lại dmesg:
+dmesg | grep -i ov5640
+```
+**Kết quả thành công mong đợi:**
+Không còn xuất hiện dòng `ov5640_write_reg: error: reg=3008, val=82`. Thay vào đó sẽ là thông báo khởi tạo thành công hoặc xuất hiện subdevice gắn với unicam.
 
 ---
 
