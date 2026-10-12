@@ -5,64 +5,140 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Monocular Spatial Vision — Operator HUD</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Top Navigation Bar -->
   <header class="header">
-    <div class="logo">
-      <span class="indicator live"></span>
-      <strong>MONOCULAR SPATIAL VISION — OPERATOR HUD</strong>
+    <div class="logo-group">
+      <span class="status-orb" id="orb-status"></span>
+      <div class="title-meta">
+        <h1 class="brand-title">MONOCULAR SPATIAL VISION</h1>
+        <span class="brand-subtitle">ROBOTIC PERCEPTION &bull; OPERATOR HUD v1.0</span>
+      </div>
     </div>
-    <div class="status-badge" id="hud-status">STATUS: CONNECTING...</div>
+
+    <div class="header-badges">
+      <div class="hud-pill"><span class="pill-label">CAMERA</span><span class="pill-val" id="badge-cam">Pcam 5C (OV5640)</span></div>
+      <div class="hud-pill"><span class="pill-label">IMU</span><span class="pill-val" id="badge-imu">MPU6050 [0x68]</span></div>
+      <div class="hud-pill"><span class="pill-label">PROTOCOL</span><span class="pill-val">36B BINARY (0x5043)</span></div>
+      <div class="status-badge connecting" id="hud-status">CONNECTING...</div>
+    </div>
   </header>
 
+  <!-- Main 4-Quadrant Tactical Grid -->
   <main class="grid-container">
-    <!-- Camera Live Feed -->
+
+    <!-- Quadrant 1: Camera Live Video Feed & Tactical Reticle -->
     <section class="card feed-card">
-      <div class="card-title">Camera Feed (1280x720) &amp; 3D Overlay</div>
+      <div class="card-header">
+        <div class="card-title">
+          <span class="reticle-icon"></span> CAMERA STREAM (1280 &times; 720) &bull; OPTICAL HUD
+        </div>
+        <div class="feed-metrics">
+          <span class="metric-tag">FPS: <strong id="val-cam-fps">0.0</strong></span>
+          <span class="metric-tag">FRAME: <strong id="val-frame-id">#0</strong></span>
+        </div>
+      </div>
+
       <div class="feed-wrapper">
-        <img id="mjpeg-stream" src="/api/v1/stream/live" alt="Camera Feed" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'360\'><rect width=\'100%\' height=\'100%\' fill=\'%23111827\'/><text x=\'50%\' y=\'50%\' fill=\'%239CA3AF\' dominant-baseline=\'middle\' text-anchor=\'middle\'>Waiting for Camera Stream...</text></svg>'">
+        <img id="mjpeg-stream" src="/api/v1/stream/live" alt="Camera Stream" onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'360\'><rect width=\'100%\' height=\'100%\' fill=\'%23090d16\'/><text x=\'50%\' y=\'50%\' fill=\'%2338bdf8\' font-family=\'monospace\' dominant-baseline=\'middle\' text-anchor=\'middle\'>WAITING FOR PI 3 STREAM (TCP :9876)...</text></svg>'">
+        <!-- Canvas overlay for optical center, dynamic tilt line, and 3D projection -->
+        <canvas id="hud-overlay-canvas" width="1280" height="720"></canvas>
+      </div>
+
+      <div class="feed-footer">
+        <span class="stream-info">&bull; Optical Center: (640, 360) &bull; Nominal Height: 0.285m &bull; Codec: MJPG</span>
+        <button class="btn-ghost" id="btn-toggle-grid">Toggle Optical Reticle</button>
       </div>
     </section>
 
-    <!-- Telemetry Panel -->
+    <!-- Quadrant 2: IMU Artificial Horizon & Attitude Telemetry -->
     <section class="card stats-card">
-      <div class="card-title">Real-Time Telemetry</div>
-      <div class="stats-grid">
-        <div class="stat-box"><span class="label">Pitch (θ)</span><span class="value" id="val-pitch">--°</span></div>
-        <div class="stat-box"><span class="label">Roll (φ)</span><span class="value" id="val-roll">--°</span></div>
-        <div class="stat-box"><span class="label">Height (hc)</span><span class="value" id="val-height">-- m</span></div>
-        <div class="stat-box"><span class="label">FPS</span><span class="value" id="val-fps">--</span></div>
+      <div class="card-header">
+        <div class="card-title">ATTITUDE & TELEMETRY (MPU6050)</div>
+        <span class="rate-badge">50 Hz</span>
       </div>
 
-      <div class="card-subtitle">Detected Objects</div>
+      <!-- Artificial Horizon Attitude Indicator Gauge -->
+      <div class="attitude-gauge-container">
+        <div class="horizon-ring">
+          <canvas id="attitude-canvas" width="220" height="220"></canvas>
+        </div>
+        <div class="attitude-labels">
+          <div class="att-num"><span class="lbl">PITCH (&theta;):</span> <strong id="val-pitch">+12.50&deg;</strong></div>
+          <div class="att-num"><span class="lbl">ROLL (&phi;):</span> <strong id="val-roll">+0.00&deg;</strong></div>
+        </div>
+      </div>
+
+      <!-- Telemetry Value Grid -->
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="label">CAMERA HEIGHT</span>
+          <span class="value" id="val-height">0.285 m</span>
+        </div>
+        <div class="stat-box">
+          <span class="label">INGEST RATE</span>
+          <span class="value" id="val-fps">0.0 FPS</span>
+        </div>
+        <div class="stat-box">
+          <span class="label">TILT COMPENSATED</span>
+          <span class="value val-highlight" id="val-tilt-comp">ACTIVE</span>
+        </div>
+        <div class="stat-box">
+          <span class="label">STREAM SOURCE</span>
+          <span class="value" id="val-stream-source">STANDBY</span>
+        </div>
+      </div>
+
+      <div class="card-subtitle">DETECTION OBJECTS (READY FOR RELEASE 2)</div>
       <ul class="object-list" id="object-list">
-        <li class="empty-msg">No objects detected yet</li>
+        <li class="empty-msg">Sensor acquisition active. 3D Detector pipeline activates in Release 2.</li>
       </ul>
     </section>
 
-    <!-- Bird's Eye View (BEV) -->
+    <!-- Quadrant 3: Bird's Eye View (BEV Top-Down Radar Canvas) -->
     <section class="card bev-card">
-      <div class="card-title">Bird's Eye View (BEV 2D Grid)</div>
-      <canvas id="bev-canvas" width="400" height="300"></canvas>
-    </section>
-
-    <!-- Laser Ground Truth Benchmark -->
-    <section class="card laser-card">
-      <div class="card-title">Laser Ground Truth Verification</div>
-      <form id="laser-form">
-        <label for="laser-input">Laser Distance (meters):</label>
-        <div class="input-row">
-          <input type="number" id="laser-input" step="0.001" placeholder="e.g. 1.825" required>
-          <button type="submit" id="btn-verify">Verify</button>
-        </div>
-      </form>
-      <div class="benchmark-result" id="benchmark-result">
-        <div>Estimated Z: <span id="res-est">--</span> m</div>
-        <div>Abs Error: <span id="res-abs">--</span> m</div>
-        <div>AbsRel: <span id="res-absrel">--</span> %</div>
-        <div class="badge" id="res-badge">WAITING</div>
+      <div class="card-header">
+        <div class="card-title">BIRD'S EYE VIEW (BEV TOP-DOWN 2D GRID)</div>
+        <span class="metric-tag">Range: 5.0m</span>
+      </div>
+      <div class="bev-wrapper">
+        <canvas id="bev-canvas" width="500" height="320"></canvas>
       </div>
     </section>
+
+    <!-- Quadrant 4: Laser Ground Truth Verification & Quick Diagnostics -->
+    <section class="card laser-card">
+      <div class="card-header">
+        <div class="card-title">LASER BENCHMARK & SYSTEM DIAGNOSTICS</div>
+        <span class="metric-tag">BOSCH GLM</span>
+      </div>
+
+      <form id="laser-form">
+        <label for="laser-input">Ground Truth Distance (Meters):</label>
+        <div class="input-row">
+          <input type="number" id="laser-input" step="0.001" placeholder="e.g. 1.825" required>
+          <button type="submit" id="btn-verify">VERIFY ACCURACY</button>
+        </div>
+      </form>
+
+      <div class="benchmark-result" id="benchmark-result">
+        <div class="res-row"><span>Estimated Distance:</span> <strong id="res-est">--</strong> m</div>
+        <div class="res-row"><span>Absolute Error (|&Delta;|):</span> <strong id="res-abs">--</strong> m</div>
+        <div class="res-row"><span>Relative Error (AbsRel):</span> <strong id="res-absrel">--</strong> %</div>
+        <div class="badge-status waiting" id="res-badge">WAITING INPUT</div>
+      </div>
+
+      <div class="system-links">
+        <a href="/docs" target="_blank" class="sys-link">&rarr; OpenAPI Swagger</a>
+        <a href="/health" target="_blank" class="sys-link">&rarr; Health Probe</a>
+        <a href="/api/v1/telemetry" target="_blank" class="sys-link">&rarr; Telemetry JSON</a>
+      </div>
+    </section>
+
   </main>
 
   <script src="app.js"></script>

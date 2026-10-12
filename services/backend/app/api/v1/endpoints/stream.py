@@ -1,33 +1,35 @@
 """Live MJPEG video streaming endpoint with 2D/3D visual overlay.
 
-TODO for Students:
-- Consume latest processed frame from perception pipeline.
-- Draw 3D wireframe bounding boxes and red contact point (#EF4444).
-- Encode to JPEG byte stream.
-- Yield multipart/x-mixed-replace frame chunks for browser consumption.
+Yields multipart/x-mixed-replace frame chunks from the Ingest Service for
+low-latency browser consumption on the Developer Laptop Web HUD.
 """
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 import time
 
+from app.services.ingest_service import get_ingest_service
+
 router = APIRouter()
 
 
 def generate_mjpeg_stream():
-    """Generator yielding multipart MJPEG frames."""
-    # TODO: Students hook up real perception frame stream here
+    """Generator yielding multipart MJPEG frames from the Ingest Service."""
+    ingest = get_ingest_service()
     while True:
-        time.sleep(0.033)  # ~30 FPS placeholder
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n" + b"" + b"\r\n"
-        )
+        frame_tuple = ingest.get_latest_frame()
+        if frame_tuple is not None:
+            _, _, jpeg_bytes = frame_tuple
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + jpeg_bytes + b"\r\n"
+            )
+        time.sleep(0.033)  # ~30 FPS
 
 
 @router.get("/stream/live")
 def get_live_stream():
-    """Returns real-time annotated video stream over HTTP MJPEG."""
+    """Returns real-time video stream over HTTP MJPEG."""
     return StreamingResponse(
         generate_mjpeg_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",

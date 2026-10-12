@@ -2,7 +2,8 @@
 
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.schemas.telemetry import TelemetryData, FrameStats
+from app.schemas.telemetry import TelemetryData
+from app.services.ingest_service import get_ingest_service
 
 router = APIRouter()
 
@@ -10,38 +11,34 @@ router = APIRouter()
 @router.get("/telemetry", response_model=TelemetryData)
 def get_latest_telemetry():
     """Returns the most recent single telemetry snapshot."""
-    # TODO: Students connect this to ingest/geometry state
+    ingest = get_ingest_service()
+    telem = ingest.get_latest_telemetry()
     return TelemetryData(
-        frame_id=100,
-        timestamp_ns=1775460000000000,
-        pitch_deg=12.48,
-        roll_deg=-0.12,
-        camera_height_m=0.285,
+        frame_id=telem.get("frame_id", 0),
+        timestamp_ns=telem.get("timestamp_ns", 0),
+        pitch_deg=telem.get("pitch_deg", 12.5),
+        roll_deg=telem.get("roll_deg", 0.0),
+        camera_height_m=telem.get("camera_height_m", 0.285),
     )
 
 
 @router.websocket("/ws/telemetry")
 async def websocket_telemetry_stream(websocket: WebSocket):
-    """Streams real-time telemetry and object detection coordinates over WebSocket."""
+    """Streams real-time telemetry and attitude coordinates over WebSocket at 30Hz."""
     await websocket.accept()
+    ingest = get_ingest_service()
     try:
         while True:
-            # TODO: Students push actual telemetry JSON payload at 30Hz
+            telem = ingest.get_latest_telemetry()
             payload = {
-                "frame_id": 1,
-                "pitch_deg": 12.48,
-                "roll_deg": -0.12,
-                "camera_height_m": 0.285,
-                "fps": 30.0,
-                "objects": [
-                    {
-                        "id": 1,
-                        "class_name": "person",
-                        "pos_xyz": [0.15, 0.02, 1.84],
-                        "size_lwh": [0.45, 0.50, 1.65],
-                        "distance_z": 1.84,
-                    }
-                ],
+                "frame_id": telem.get("frame_id", 0),
+                "timestamp_ns": telem.get("timestamp_ns", 0),
+                "pitch_deg": telem.get("pitch_deg", 12.5),
+                "roll_deg": telem.get("roll_deg", 0.0),
+                "camera_height_m": telem.get("camera_height_m", 0.285),
+                "fps": telem.get("fps", 0.0),
+                "is_streaming": telem.get("is_streaming", False),
+                "objects": [],
             }
             await websocket.send_json(payload)
             await asyncio.sleep(0.033)
