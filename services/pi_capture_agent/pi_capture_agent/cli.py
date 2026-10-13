@@ -38,7 +38,15 @@ def load_config(config_path: str) -> dict:
     return {}
 
 
-def run_diag(device: str, width: int, height: int, i2c_bus: int, i2c_addr: int) -> None:
+def run_diag(
+    device: str,
+    width: int,
+    height: int,
+    i2c_bus: int,
+    i2c_addr: int,
+    pixel_format: str = "UYVY",
+    rotate_180: bool = False,
+) -> None:
     """Performs automated hardware and interface diagnosis."""
     print("=" * 65)
     print("  MONOCULAR SPATIAL VISION — HARDWARE SANITY DIAGNOSTIC")
@@ -60,8 +68,15 @@ def run_diag(device: str, width: int, height: int, i2c_bus: int, i2c_addr: int) 
         all_passed = False
 
     # 2. Camera Check
-    print(f"\n[2/2] Probing Camera Device {device} ({width}x{height})...")
-    cam = CameraDriver(device=device, width=width, height=height, fps=30)
+    print(f"\n[2/2] Probing Camera Device {device} ({width}x{height}, fmt={pixel_format})...")
+    cam = CameraDriver(
+        device=device,
+        width=width,
+        height=height,
+        fps=30,
+        pixel_format=pixel_format,
+        rotate_180=rotate_180,
+    )
     if cam.open():
         print(f"  -> [PASS] Camera device node opened.")
         # Grab 5 test frames to verify frame acquisition rate
@@ -95,7 +110,16 @@ def run_diag(device: str, width: int, height: int, i2c_bus: int, i2c_addr: int) 
     print("=" * 65 + "\n")
 
 
-def run_snapshot(device: str, width: int, height: int, output_path: str, i2c_bus: int, i2c_addr: int) -> None:
+def run_snapshot(
+    device: str,
+    width: int,
+    height: int,
+    output_path: str,
+    i2c_bus: int,
+    i2c_addr: int,
+    pixel_format: str = "UYVY",
+    rotate_180: bool = False,
+) -> None:
     """Captures a single frame, logs attitude, and saves image to disk."""
     import cv2
 
@@ -104,7 +128,13 @@ def run_snapshot(device: str, width: int, height: int, output_path: str, i2c_bus
     pitch, roll, _ = imu.read_attitude()
     imu.close()
 
-    cam = CameraDriver(device=device, width=width, height=height)
+    cam = CameraDriver(
+        device=device,
+        width=width,
+        height=height,
+        pixel_format=pixel_format,
+        rotate_180=rotate_180,
+    )
     cam.open()
     # Warm up camera auto-exposure with 3 frames
     for _ in range(3):
@@ -164,9 +194,24 @@ def run_test_imu(i2c_bus: int, i2c_addr: int, rate_hz: float = 20.0) -> None:
         imu.close()
 
 
-def run_preview_server(device: str, width: int, height: int, port: int, i2c_bus: int, i2c_addr: int) -> None:
+def run_preview_server(
+    device: str,
+    width: int,
+    height: int,
+    port: int,
+    i2c_bus: int,
+    i2c_addr: int,
+    pixel_format: str = "UYVY",
+    rotate_180: bool = False,
+) -> None:
     """Runs a lightweight diagnostic HTTP server serving live frames to laptop browser."""
-    cam = CameraDriver(device=device, width=width, height=height)
+    cam = CameraDriver(
+        device=device,
+        width=width,
+        height=height,
+        pixel_format=pixel_format,
+        rotate_180=rotate_180,
+    )
     cam.open()
     imu = IMUReader(bus_id=i2c_bus, address=i2c_addr)
     imu.initialize()
@@ -253,6 +298,8 @@ def run_stream(
     port: int,
     i2c_bus: int,
     i2c_addr: int,
+    pixel_format: str = "UYVY",
+    rotate_180: bool = False,
 ) -> None:
     """Continuous production streaming loop to remote Ingest Server."""
     running = True
@@ -266,7 +313,14 @@ def run_stream(
     signal.signal(signal.SIGTERM, sig_handler)
 
     # Initialize components
-    cam = CameraDriver(device=device, width=width, height=height, fps=fps)
+    cam = CameraDriver(
+        device=device,
+        width=width,
+        height=height,
+        fps=fps,
+        pixel_format=pixel_format,
+        rotate_180=rotate_180,
+    )
     if not cam.open():
         logger.error("Could not open camera device %s", device)
         sys.exit(1)
@@ -359,6 +413,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=None, help="Target ingest port (overrides config)")
     parser.add_argument("--preview-port", type=int, default=8080, help="Port for diagnostic preview server")
     parser.add_argument("--device", default=None, help="Camera device node e.g. /dev/video0")
+    parser.add_argument("--pixel-format", default=None, help="Camera pixel format (UYVY, YUYV, MJPG)")
+    parser.add_argument("--rotate-180", action="store_true", default=None, help="Rotate frames 180 degrees")
 
     args = parser.parse_args()
 
@@ -372,6 +428,8 @@ def main() -> None:
     width = dev_cfg.get("width", 1280)
     height = dev_cfg.get("height", 720)
     fps = dev_cfg.get("fps", 30)
+    pixel_format = args.pixel_format or dev_cfg.get("pixel_format", "UYVY")
+    rotate_180 = args.rotate_180 if args.rotate_180 is not None else dev_cfg.get("rotate_180", False)
 
     i2c_bus = imu_cfg.get("i2c_bus", 1)
     i2c_addr = imu_cfg.get("i2c_address", 0x68)
@@ -382,7 +440,15 @@ def main() -> None:
     logger.info("Selected mode: %s", args.mode)
 
     if args.mode == "diag":
-        run_diag(device=device, width=width, height=height, i2c_bus=i2c_bus, i2c_addr=i2c_addr)
+        run_diag(
+            device=device,
+            width=width,
+            height=height,
+            i2c_bus=i2c_bus,
+            i2c_addr=i2c_addr,
+            pixel_format=pixel_format,
+            rotate_180=rotate_180,
+        )
     elif args.mode == "snapshot":
         run_snapshot(
             device=device,
@@ -391,6 +457,8 @@ def main() -> None:
             output_path=args.output,
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
+            pixel_format=pixel_format,
+            rotate_180=rotate_180,
         )
     elif args.mode == "test-imu":
         run_test_imu(i2c_bus=i2c_bus, i2c_addr=i2c_addr)
@@ -402,6 +470,8 @@ def main() -> None:
             port=args.preview_port,
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
+            pixel_format=pixel_format,
+            rotate_180=rotate_180,
         )
     elif args.mode == "stream":
         run_stream(
@@ -413,6 +483,8 @@ def main() -> None:
             port=port,
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
+            pixel_format=pixel_format,
+            rotate_180=rotate_180,
         )
     else:
         logger.error("Unknown mode: %s", args.mode)

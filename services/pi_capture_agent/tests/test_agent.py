@@ -13,8 +13,18 @@ from pi_capture_agent.cli import load_config
 
 def test_camera_driver_mock():
     """Validates CameraDriver in synthetic mock mode."""
-    cam = CameraDriver(device="/dev/video0", width=640, height=480, fps=15, mock_mode=True)
+    cam = CameraDriver(
+        device="/dev/video0",
+        width=640,
+        height=480,
+        fps=15,
+        pixel_format="UYVY",
+        mock_mode=True,
+        rotate_180=True,
+    )
     assert cam.open() is True
+    assert cam.pixel_format == "UYVY"
+    assert cam.rotate_180 is True
 
     ts_ns, frame, jpeg_bytes = cam.read_frame()
     assert ts_ns > 0

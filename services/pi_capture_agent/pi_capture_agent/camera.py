@@ -21,8 +21,9 @@ class CameraDriver:
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
-        pixel_format: str = "MJPG",
+        pixel_format: str = "UYVY",
         mock_mode: bool = False,
+        rotate_180: bool = False,
     ):
         self.device = device
         self.width = width
@@ -30,6 +31,7 @@ class CameraDriver:
         self.fps = fps
         self.pixel_format = pixel_format
         self.mock_mode = mock_mode
+        self.rotate_180 = rotate_180
         self._cap = None
         self._is_opened = False
         self._frame_count = 0
@@ -46,12 +48,22 @@ class CameraDriver:
         try:
             import cv2
 
-            # Determine device index or path
-            dev_idx = int(self.device.replace("/dev/video", "")) if "/dev/video" in self.device else 0
-            
-            # Prefer V4L2 backend on Linux
             backend = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") else cv2.CAP_ANY
-            self._cap = cv2.VideoCapture(dev_idx, backend)
+
+            # Determine device target (path or index)
+            dev_target = self.device
+            if isinstance(self.device, str) and self.device.isdigit():
+                dev_target = int(self.device)
+
+            self._cap = cv2.VideoCapture(dev_target, backend)
+
+            # Fallback if device string failed to open directly
+            if not self._cap.isOpened() and isinstance(dev_target, str) and "/dev/video" in dev_target:
+                try:
+                    idx = int(dev_target.replace("/dev/video", ""))
+                    self._cap = cv2.VideoCapture(idx, backend)
+                except ValueError:
+                    pass
 
             if not self._cap.isOpened():
                 logger.warning("Could not open V4L2 camera %s. Falling back to synthetic mock.", self.device)
@@ -60,26 +72,31 @@ class CameraDriver:
                 self.is_synthetic_active = True
                 return True
 
-            # Configure resolution
+            # Configure pixel format (UYVY native to OV5640 + Unicam, or YUYV / MJPG)
+            fmt = self.pixel_format.upper()
+            if fmt in ("UYVY", "YUYV", "MJPG"):
+                fourcc = cv2.VideoWriter_fourcc(*fmt)
+                self._cap.set(cv2.CAP_PROP_FOURCC, float(fourcc))
+
+            # Configure resolution and FPS
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.width))
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.height))
             self._cap.set(cv2.CAP_PROP_FPS, float(self.fps))
 
-            # Request MJPG hardware compression to minimize CPU usage on Pi 3
-            if self.pixel_format.upper() == "MJPG":
-                fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-                self._cap.set(cv2.CAP_PROP_FOURCC, float(fourcc))
-
             # Set buffer size to 1 to eliminate frame latency
             if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
                 self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1.0)
+
+            # Warm-up frames: Unicam CSI receiver needs a few frames to settle DMA buffer
+            for _ in range(3):
+                self._cap.read()
 
             actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             actual_fps = self._cap.get(cv2.CAP_PROP_FPS)
 
             logger.info(
-                "Camera %s opened: %dx%d @ %.1f FPS (Requested %dx%d @ %d FPS)",
+                "Camera %s opened: %dx%d @ %.1f FPS (Requested %dx%d @ %d FPS, fmt=%s)",
                 self.device,
                 actual_w,
                 actual_h,
@@ -87,6 +104,7 @@ class CameraDriver:
                 self.width,
                 self.height,
                 self.fps,
+                self.pixel_format,
             )
             self._is_opened = True
             return True
@@ -164,6 +182,9 @@ class CameraDriver:
             return self._generate_synthetic_frame()
 
         self.is_synthetic_active = False
+
+        if self.rotate_180:
+            frame = cv2.flip(frame, -1)
 
         # Compress to JPEG
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
