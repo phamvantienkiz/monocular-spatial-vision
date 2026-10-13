@@ -126,6 +126,7 @@ class IngestService:
 
             logger.info("Pi connected from %s:%d — receiving frames.", addr[0], addr[1])
             client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
             client_sock.settimeout(5.0)
             self._receive_loop(client_sock, addr)
 

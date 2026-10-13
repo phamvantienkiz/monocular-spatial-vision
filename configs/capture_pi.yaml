@@ -3,11 +3,12 @@
 
 device:
   video_device: "/dev/video0"
-  width: 1280
-  height: 720
+  width: 640
+  height: 360
   fps: 30
-  pixel_format: "MJPG"  # Options: MJPG, YUYV, UYVY
-  rotate_180: true      # Set to true for Pcam 5C mounted with CSI ribbon at bottom
+  pixel_format: "UYVY"  # Default on Pi 3 Unicam + OV5640
+  rotate_180: false     # Hardware flip via v4l2-ctl subdev, bypass cv2.flip software overhead
+  jpeg_quality: 60      # Optimized JPEG quality for low CPU overhead & network bandwidth
 
 imu:
   i2c_bus: 1

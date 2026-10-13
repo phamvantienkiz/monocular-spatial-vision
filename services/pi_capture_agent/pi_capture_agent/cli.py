@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import os
+import queue
 import signal
 import sys
 import threading
@@ -37,11 +38,12 @@ def load_config(config_path: str) -> Dict[str, Any]:
     default_config: Dict[str, Any] = {
         "device": {
             "video_device": "/dev/video0",
-            "width": 1280,
-            "height": 720,
+            "width": 640,
+            "height": 360,
             "fps": 30,
-            "pixel_format": "MJPG",
-            "rotate_180": True,
+            "pixel_format": "UYVY",
+            "rotate_180": False,
+            "jpeg_quality": 60,
         },
         "imu": {
             "i2c_bus": 1,
@@ -96,11 +98,11 @@ def run_snapshot(config: Dict[str, Any], output_path: str) -> None:
     logger.info("Initializing camera for single snapshot...")
     cam = CameraDriver(
         device=dev_cfg.get("video_device", "/dev/video0"),
-        width=int(dev_cfg.get("width", 1280)),
-        height=int(dev_cfg.get("height", 720)),
+        width=int(dev_cfg.get("width", 640)),
+        height=int(dev_cfg.get("height", 360)),
         fps=int(dev_cfg.get("fps", 30)),
-        pixel_format=dev_cfg.get("pixel_format", "MJPG"),
-        rotate_180=bool(dev_cfg.get("rotate_180", True)),
+        pixel_format=dev_cfg.get("pixel_format", "UYVY"),
+        rotate_180=bool(dev_cfg.get("rotate_180", False)),
     )
 
 
@@ -446,12 +448,14 @@ def run_stream(
     target_fps = int(dev_cfg.get("fps", 30))
     frame_interval = 1.0 / max(target_fps, 1)
 
-    width = int(dev_cfg.get("width", 1280))
-    height = int(dev_cfg.get("height", 720))
+    width = int(dev_cfg.get("width", 640))
+    height = int(dev_cfg.get("height", 360))
+    rotate_180 = bool(dev_cfg.get("rotate_180", False))
+    jpeg_quality = int(dev_cfg.get("jpeg_quality", 60))
 
     logger.info("Starting live capture and streaming pipeline:")
     logger.info("  Target Ingest Server: %s:%d", target_host, target_port)
-    logger.info("  Video: %dx%d @ %d FPS (%s)", width, height, target_fps, dev_cfg.get("pixel_format", "MJPG"))
+    logger.info("  Video: %dx%d @ %d FPS (%s)", width, height, target_fps, dev_cfg.get("pixel_format", "UYVY"))
     logger.info("  IMU: Bus %d, Addr 0x%02X", imu_cfg.get("i2c_bus", 1), imu_cfg.get("i2c_address", 0x68))
 
     cam = CameraDriver(
@@ -459,8 +463,8 @@ def run_stream(
         width=width,
         height=height,
         fps=target_fps,
-        pixel_format=dev_cfg.get("pixel_format", "MJPG"),
-        rotate_180=bool(dev_cfg.get("rotate_180", True)),
+        pixel_format=dev_cfg.get("pixel_format", "UYVY"),
+        rotate_180=rotate_180,
     )
 
     if not cam.open():
@@ -481,12 +485,49 @@ def run_stream(
     streamer = SocketStreamer(host=target_host, port=target_port, retry_delay=retry_delay)
     streamer.connect()
 
-    running = True
+    # Bounded single-frame queue to avoid latency drift (Producer-Consumer)
+    frame_queue: queue.Queue = queue.Queue(maxsize=1)
+    stop_event = threading.Event()
+
+    def capture_worker() -> None:
+        """Producer thread: continuously acquires raw frames and IMU attitude without blocking."""
+        while not stop_event.is_set():
+            try:
+                # Capture uncompressed BGR frame (encode_jpeg=False)
+                ts_ns, frame, _ = cam.read_frame(encode_jpeg=False)
+                if frame is None:
+                    time.sleep(0.005)
+                    continue
+
+                pitch_deg, roll_deg = 0.0, 0.0
+                if imu is not None:
+                    try:
+                        pitch_deg, roll_deg, _ = imu.read_attitude()
+                    except Exception:
+                        pass
+
+                item = (ts_ns, frame, pitch_deg, roll_deg)
+                try:
+                    frame_queue.put_nowait(item)
+                except queue.Full:
+                    try:
+                        _ = frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        frame_queue.put_nowait(item)
+                    except queue.Full:
+                        pass
+            except Exception as e:
+                logger.debug("Error in capture worker: %s", e)
+                time.sleep(0.01)
+
+    cap_thread = threading.Thread(target=capture_worker, name="CaptureWorker", daemon=True)
+    cap_thread.start()
 
     def sig_handler(sig, frame):
-        nonlocal running
         logger.info("Interrupt signal received. Stopping streaming loop...")
-        running = False
+        stop_event.set()
 
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
@@ -495,35 +536,41 @@ def run_stream(
     frames_sent = 0
     bytes_sent = 0
     t_stats = time.time()
+    last_pitch = 0.0
+    last_roll = 0.0
 
     try:
-        while running:
+        while not stop_event.is_set():
             t0 = time.time()
-            ts_ns, _, jpeg_bytes = cam.read_frame(encode_jpeg=True, jpeg_quality=80)
+            try:
+                item = frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
-            if jpeg_bytes is not None:
-                pitch_deg, roll_deg = 0.0, 0.0
-                if imu is not None:
-                    try:
-                        pitch_deg, roll_deg, _ = imu.read_attitude()
-                    except Exception:
-                        pass
+            ts_ns, frame, pitch_deg, roll_deg = item
+            last_pitch = pitch_deg
+            last_roll = roll_deg
 
-                packet = BinaryFramePacker.pack(
-                    frame_id=frame_id,
-                    timestamp_ns=ts_ns,
-                    pitch_deg=pitch_deg,
-                    roll_deg=roll_deg,
-                    image_bytes=jpeg_bytes,
-                    width=width,
-                    height=height,
-                )
+            # Hardware-friendly JPEG compression on streaming thread
+            jpeg_bytes = CameraDriver.encode_to_jpeg(frame, jpeg_quality=jpeg_quality)
+            if jpeg_bytes is None:
+                continue
 
-                success = streamer.send_frame_packet(packet)
-                frame_id += 1
-                if success:
-                    frames_sent += 1
-                    bytes_sent += len(packet)
+            packet = BinaryFramePacker.pack(
+                frame_id=frame_id,
+                timestamp_ns=ts_ns,
+                pitch_deg=pitch_deg,
+                roll_deg=roll_deg,
+                image_bytes=jpeg_bytes,
+                width=width,
+                height=height,
+            )
+
+            success = streamer.send_frame_packet(packet)
+            frame_id += 1
+            if success:
+                frames_sent += 1
+                bytes_sent += len(packet)
 
             # Periodic statistics report every second
             now = time.time()
@@ -538,8 +585,8 @@ def run_stream(
                     frame_id,
                     fps,
                     kb_rate,
-                    pitch_deg if 'pitch_deg' in locals() else 0.0,
-                    roll_deg if 'roll_deg' in locals() else 0.0,
+                    last_pitch,
+                    last_roll,
                 )
                 frames_sent = 0
                 bytes_sent = 0
@@ -553,6 +600,8 @@ def run_stream(
 
     finally:
         logger.info("Cleaning up streaming resources...")
+        stop_event.set()
+        cap_thread.join(timeout=1.0)
         streamer.close()
         cam.release()
         if imu:

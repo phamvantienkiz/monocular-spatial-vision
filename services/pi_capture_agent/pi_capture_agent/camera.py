@@ -47,10 +47,10 @@ class CameraDriver:
     def __init__(
         self,
         device: Union[str, int] = "/dev/video0",
-        width: int = 1280,
-        height: int = 720,
+        width: int = 640,
+        height: int = 360,
         fps: int = 30,
-        pixel_format: str = "MJPG",
+        pixel_format: str = "UYVY",
         buffer_size: int = 1,
         rotate_180: bool = False,
     ):
@@ -58,8 +58,8 @@ class CameraDriver:
 
         Args:
             device: V4L2 device path (e.g. '/dev/video0') or device index.
-            width: Desired image width (default: 1280).
-            height: Desired image height (default: 720).
+            width: Desired image width (default: 640).
+            height: Desired image height (default: 360).
             fps: Desired capture frame rate (default: 30).
             pixel_format: Camera pixel format ("MJPG", "UYVY", or "YUYV").
             buffer_size: OpenCV internal V4L2 buffer size (1 minimizes latency).
@@ -183,16 +183,36 @@ class CameraDriver:
         return True
 
 
+    @staticmethod
+    def encode_to_jpeg(frame: np.ndarray, jpeg_quality: int = 60) -> Optional[bytes]:
+        """Compresses a BGR numpy frame into JPEG bytes.
+
+        Args:
+            frame: Input image array in BGR format.
+            jpeg_quality: JPEG quality between 1 and 100 (default: 60).
+
+        Returns:
+            Optional[bytes]: Compressed JPEG byte string, or None on failure.
+        """
+        import cv2
+
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
+        success, enc_buf = cv2.imencode(".jpg", frame, encode_params)
+        if success:
+            return enc_buf.tobytes()
+        logger.warning("Failed to encode frame to JPEG.")
+        return None
+
     def read_frame(
         self,
         encode_jpeg: bool = True,
-        jpeg_quality: int = 80,
+        jpeg_quality: int = 60,
     ) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
         """Reads a single frame from the camera.
 
         Args:
             encode_jpeg: If True, encodes frame to compressed JPEG bytes.
-            jpeg_quality: JPEG compression quality (1-100, default: 80).
+            jpeg_quality: JPEG compression quality (1-100, default: 60).
 
         Returns:
             Tuple[int, Optional[np.ndarray], Optional[bytes]]:
@@ -219,12 +239,7 @@ class CameraDriver:
         jpeg_bytes: Optional[bytes] = None
 
         if encode_jpeg:
-            encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
-            success, enc_buf = cv2.imencode(".jpg", frame, encode_params)
-            if success:
-                jpeg_bytes = enc_buf.tobytes()
-            else:
-                logger.warning("Failed to encode frame to JPEG.")
+            jpeg_bytes = self.encode_to_jpeg(frame, jpeg_quality)
 
         return timestamp_ns, frame, jpeg_bytes
 
