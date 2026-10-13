@@ -24,6 +24,7 @@ Bộ tài liệu thay thế các hướng dẫn lý thuyết chung chung bằng 
 | **03. Web HUD & Giám sát** | [03-web-hud-and-laptop-inspection.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/guide/03-web-hud-and-laptop-inspection.md) | Giải pháp xem trực quan khi Jetson headless: MJPEG stream, WebSocket, BEV Canvas trên Laptop |
 | **04. Kế hoạch Tích hợp 6 Bước** | [04-step-by-step-integration-and-testing-plan.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/guide/04-step-by-step-integration-and-testing-plan.md) | Quy trình 6 nấc thang: Unit test Laptop $\to$ Test Pi $\to$ Test Jetson $\to$ Ghép nối $\to$ Đo laser |
 | **05. Cấu trúc Mã nguồn** | [05-folder-structure-and-code-skeleton.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/guide/05-folder-structure-and-code-skeleton.md) | Bố cục thư mục `services/`, `backend/`, `tools/`, cấu hình `pyproject.toml` và `.venv` |
+| **06. Kế hoạch Giả lập Jetson & Stream Ethernet** | [06-laptop-simulation-and-ethernet-streaming-plan.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/guide/06-laptop-simulation-and-ethernet-streaming-plan.md) | Phân tách vai trò Pi 3 (Edge Capture), Laptop giả lập Jetson, kịch bản stream Ethernet không phụ thuộc IP tĩnh và lộ trình Release 2 |
 
 ---
 
