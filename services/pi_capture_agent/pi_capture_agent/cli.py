@@ -14,7 +14,9 @@ import os
 import time
 import signal
 import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 import yaml
 
@@ -204,7 +206,7 @@ def run_preview_server(
     pixel_format: str = "UYVY",
     rotate_180: bool = False,
 ) -> None:
-    """Runs a lightweight diagnostic HTTP server serving live frames to laptop browser."""
+    """Runs a high-performance diagnostic HTTP preview server serving live frames and telemetry to laptop."""
     cam = CameraDriver(
         device=device,
         width=width,
@@ -212,70 +214,195 @@ def run_preview_server(
         pixel_format=pixel_format,
         rotate_180=rotate_180,
     )
-    cam.open()
+    if not cam.open():
+        logger.error("Could not open camera device %s for preview", device)
+        sys.exit(1)
+
     imu = IMUReader(bus_id=i2c_bus, address=i2c_addr)
     imu.initialize()
 
+    # Shared thread-safe state for streaming
+    state = {
+        "jpeg": None,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "ax": 0.0,
+        "ay": 0.0,
+        "az": 0.0,
+        "fps": 0.0,
+    }
+    lock = threading.Lock()
+    stop_event = threading.Event()
+
+    def capture_worker():
+        """Background thread acquiring frames and attitude at full sensor throughput."""
+        frame_timestamps = []
+        while not stop_event.is_set():
+            pitch, roll, (ax, ay, az) = imu.read_attitude()
+            ts_ns, frame, jpeg_bytes = cam.read_frame(jpeg_quality=70)
+            if jpeg_bytes is not None:
+                now = time.time()
+                frame_timestamps.append(now)
+                # Keep rolling window of last 15 frames for instantaneous FPS
+                if len(frame_timestamps) > 15:
+                    frame_timestamps.pop(0)
+                if len(frame_timestamps) >= 2:
+                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
+                else:
+                    current_fps = 0.0
+
+                with lock:
+                    state["jpeg"] = jpeg_bytes
+                    state["pitch"] = pitch
+                    state["roll"] = roll
+                    state["ax"] = ax
+                    state["ay"] = ay
+                    state["az"] = az
+                    state["fps"] = current_fps
+
+            time.sleep(0.005)
+
+    worker_thread = threading.Thread(target=capture_worker, daemon=True)
+    worker_thread.start()
+
     class PreviewHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            pass  # Suppress excessive HTTP access logs
+            pass  # Suppress HTTP access noise
 
         def do_GET(self):
             if self.path in ("/", "/preview"):
-                pitch, roll, _ = imu.read_attitude()
-                html = f"""<!DOCTYPE html>
-<html>
+                html = """<!DOCTYPE html>
+<html lang="vi">
 <head>
     <meta charset="utf-8">
-    <title>Pi 3 Camera Diagnostic Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pcam 5C & IMU Live HUD</title>
     <style>
-        body {{ background: #0f172a; color: #f8fafc; font-family: monospace; text-align: center; margin: 20px; }}
-        h1 {{ color: #38bdf8; }}
-        .hud-box {{ display: inline-block; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; }}
-        img {{ max-width: 90vw; height: auto; border: 2px solid #0284c7; border-radius: 4px; }}
-        .badge {{ background: #0284c7; color: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; }}
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #090d16; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 12px; }
+        .hud-card { background: #131c2e; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; width: 100%; max-width: 580px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .title { font-size: 14px; font-weight: bold; color: #38bdf8; letter-spacing: 0.5px; }
+        .badge-live { background: #059669; color: #ecfdf5; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 4px; }
+        .badge-live::before { content: ""; width: 6px; height: 6px; background: #34d399; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+        .video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #334155; }
+        #live-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+        .stat-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 10px; text-align: center; }
+        .stat-label { font-size: 10px; text-transform: uppercase; color: #94a3b8; margin-bottom: 2px; font-weight: 600; letter-spacing: 0.5px; }
+        .stat-value { font-size: 13px; font-weight: 700; font-family: monospace; color: #f8fafc; }
+        .fps-val { color: #10b981; }
+        .att-val { color: #38bdf8; }
+        .imu-val { color: #f59e0b; font-size: 11px; }
     </style>
 </head>
 <body>
-    <h1>Raspberry Pi 3 — Pcam 5C & IMU Diagnostic Preview</h1>
-    <div class="hud-box">
-        <p>
-            <span class="badge">LIVE SNAPSHOT</span> &nbsp;
-            <strong>Pitch:</strong> {pitch:+.2f}° &nbsp;|&nbsp;
-            <strong>Roll:</strong> {roll:+.2f}°
-        </p>
-        <img id="live-img" src="/snapshot.jpg" alt="Feed">
-        <p style="color: #94a3b8; font-size: 12px;">Auto-refreshing every 500ms...</p>
+    <div class="hud-card">
+        <div class="header">
+            <span class="title">PCAM 5C & MPU-6050 HUD</span>
+            <span class="badge-live">LIVE FEED</span>
+        </div>
+        <div class="video-container">
+            <img id="live-img" src="/snapshot.jpg" alt="Feed">
+        </div>
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Capture FPS</div>
+                <div class="stat-value fps-val" id="fps-txt">-- FPS</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Pitch / Roll</div>
+                <div class="stat-value att-val" id="att-txt">0.0° / 0.0°</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Accel (Ax, Ay, Az)</div>
+                <div class="stat-value imu-val" id="accel-txt">0.00, 0.00, 1.00g</div>
+            </div>
+        </div>
     </div>
     <script>
-        setInterval(() => {{
-            const img = document.getElementById('live-img');
-            img.src = '/snapshot.jpg?t=' + Date.now();
-        }}, 500);
+        let isFetching = false;
+        function streamLoop() {
+            if (isFetching) return;
+            isFetching = true;
+            const nextImg = new Image();
+            nextImg.onload = () => {
+                document.getElementById('live-img').src = nextImg.src;
+                isFetching = false;
+                requestAnimationFrame(streamLoop);
+            };
+            nextImg.onerror = () => {
+                isFetching = false;
+                setTimeout(streamLoop, 150);
+            };
+            nextImg.src = '/snapshot.jpg?t=' + Date.now();
+        }
+        streamLoop();
+
+        setInterval(() => {
+            fetch('/telemetry')
+                .then(r => r.json())
+                .then(d => {
+                    document.getElementById('fps-txt').innerText = d.fps.toFixed(1) + ' FPS';
+                    document.getElementById('att-txt').innerText = (d.pitch >= 0 ? '+' : '') + d.pitch.toFixed(1) + '° / ' + (d.roll >= 0 ? '+' : '') + d.roll.toFixed(1) + '°';
+                    document.getElementById('accel-txt').innerText = `${d.ax.toFixed(2)}, ${d.ay.toFixed(2)}, ${d.az.toFixed(2)}g`;
+                })
+                .catch(() => {});
+        }, 150);
     </script>
 </body>
 </html>"""
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(html.encode("utf-8"))
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html.encode("utf-8"))
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
             elif self.path.startswith("/snapshot.jpg"):
-                ts_ns, frame, jpeg_bytes = cam.read_frame()
+                with lock:
+                    jpeg_bytes = state["jpeg"]
                 if jpeg_bytes:
-                    self.send_response(200)
-                    self.send_header("Content-Type", "image/jpeg")
-                    self.send_header("Content-Length", str(len(jpeg_bytes)))
-                    self.end_headers()
-                    self.wfile.write(jpeg_bytes)
+                    try:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Content-Length", str(len(jpeg_bytes)))
+                        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                        self.end_headers()
+                        self.wfile.write(jpeg_bytes)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
                 else:
-                    self.send_response(500)
+                    self.send_response(503)
                     self.end_headers()
+
+            elif self.path.startswith("/telemetry"):
+                with lock:
+                    telemetry = {
+                        "fps": state["fps"],
+                        "pitch": state["pitch"],
+                        "roll": state["roll"],
+                        "ax": state["ax"],
+                        "ay": state["ay"],
+                        "az": state["az"],
+                    }
+                try:
+                    body = json.dumps(telemetry).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
             else:
                 self.send_response(404)
                 self.end_headers()
 
-    server = HTTPServer(("0.0.0.0", port), PreviewHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), PreviewHandler)
     logger.info("Diagnostic Preview Server listening on http://0.0.0.0:%d (Press Ctrl+C to stop)", port)
     logger.info("Open http://<pi_ip>:%d/ in your laptop browser to view camera feed.", port)
 
@@ -284,7 +411,9 @@ def run_preview_server(
     except KeyboardInterrupt:
         logger.info("Shutting down preview server...")
     finally:
+        stop_event.set()
         server.server_close()
+        worker_thread.join(timeout=1.0)
         cam.release()
         imu.close()
 

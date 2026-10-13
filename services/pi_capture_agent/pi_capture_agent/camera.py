@@ -186,8 +186,11 @@ class CameraDriver:
         _, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
         return ts_ns, frame, jpeg_buf.tobytes()
 
-    def read_frame(self) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
+    def read_frame(self, jpeg_quality: int = 75) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
         """Reads a single frame from the camera.
+
+        Args:
+            jpeg_quality: JPEG compression quality (1-100, default: 75).
 
         Returns:
             Tuple[int, Optional[np.ndarray], Optional[bytes]]:
@@ -217,7 +220,7 @@ class CameraDriver:
             frame = cv2.flip(frame, -1)
 
         # Compress to JPEG
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
         success, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
         jpeg_bytes = jpeg_buf.tobytes() if success else None
 

@@ -7,7 +7,7 @@ device:
   height: 720
   fps: 30
   pixel_format: "UYVY"  # Options: UYVY (native for Pcam 5C), YUYV, MJPG
-  rotate_180: false     # Set true if Pcam 5C is mounted upside down
+  rotate_180: true      # Pcam 5C mounted inverted on robot (rotates 180 deg)
 
 imu:
   i2c_bus: 1
