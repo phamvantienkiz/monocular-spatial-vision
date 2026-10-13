@@ -47,6 +47,7 @@ def run_diag(
     i2c_bus: int,
     i2c_addr: int,
     pixel_format: str = "UYVY",
+    vflip: bool = True,
     rotate_180: bool = False,
 ) -> None:
     """Performs automated hardware and interface diagnosis."""
@@ -77,6 +78,7 @@ def run_diag(
         height=height,
         fps=30,
         pixel_format=pixel_format,
+        vflip=vflip,
         rotate_180=rotate_180,
     )
     if cam.open():
@@ -120,6 +122,7 @@ def run_snapshot(
     i2c_bus: int,
     i2c_addr: int,
     pixel_format: str = "UYVY",
+    vflip: bool = True,
     rotate_180: bool = False,
 ) -> None:
     """Captures a single frame, logs attitude, and saves image to disk."""
@@ -135,6 +138,7 @@ def run_snapshot(
         width=width,
         height=height,
         pixel_format=pixel_format,
+        vflip=vflip,
         rotate_180=rotate_180,
     )
     cam.open()
@@ -204,14 +208,21 @@ def run_preview_server(
     i2c_bus: int,
     i2c_addr: int,
     pixel_format: str = "UYVY",
+    vflip: bool = True,
     rotate_180: bool = False,
+    preview_width: int = 640,
+    preview_height: int = 360,
+    preview_quality: int = 65,
 ) -> None:
     """Runs a high-performance diagnostic HTTP preview server serving live frames and telemetry to laptop."""
+    import cv2
+
     cam = CameraDriver(
         device=device,
         width=width,
         height=height,
         pixel_format=pixel_format,
+        vflip=vflip,
         rotate_180=rotate_180,
     )
     if not cam.open():
@@ -230,28 +241,50 @@ def run_preview_server(
         "ay": 0.0,
         "az": 0.0,
         "fps": 0.0,
+        "frame_id": 0,
     }
-    lock = threading.Lock()
+    condition = threading.Condition()
     stop_event = threading.Event()
 
     def capture_worker():
         """Background thread acquiring frames and attitude at full sensor throughput."""
         frame_timestamps = []
-        while not stop_event.is_set():
-            pitch, roll, (ax, ay, az) = imu.read_attitude()
-            ts_ns, frame, jpeg_bytes = cam.read_frame(jpeg_quality=70)
-            if jpeg_bytes is not None:
-                now = time.time()
-                frame_timestamps.append(now)
-                # Keep rolling window of last 15 frames for instantaneous FPS
-                if len(frame_timestamps) > 15:
-                    frame_timestamps.pop(0)
-                if len(frame_timestamps) >= 2:
-                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
-                else:
-                    current_fps = 0.0
+        frame_count = 0
+        target_size = (preview_width, preview_height)
+        jpeg_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(preview_quality)]
 
-                with lock:
+        while not stop_event.is_set():
+            # DRAIN camera buffer directly at sensor native rate without sleep
+            ts_ns, frame = cam.read_raw()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+
+            now = time.time()
+            frame_timestamps.append(now)
+            if len(frame_timestamps) > 20:
+                frame_timestamps.pop(0)
+            if len(frame_timestamps) >= 2:
+                current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
+            else:
+                current_fps = 0.0
+
+            frame_count += 1
+
+            # Read IMU attitude
+            pitch, roll, (ax, ay, az) = imu.read_attitude()
+
+            # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
+            if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
+                preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_LINEAR)
+            else:
+                preview_frame = frame
+
+            success, jpeg_buf = cv2.imencode(".jpg", preview_frame, jpeg_param)
+            jpeg_bytes = jpeg_buf.tobytes() if success else None
+
+            if jpeg_bytes is not None:
+                with condition:
                     state["jpeg"] = jpeg_bytes
                     state["pitch"] = pitch
                     state["roll"] = roll
@@ -259,8 +292,12 @@ def run_preview_server(
                     state["ay"] = ay
                     state["az"] = az
                     state["fps"] = current_fps
+                    state["frame_id"] = frame_count
+                    condition.notify_all()
 
-            time.sleep(0.005)
+            # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
+            if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
+                time.sleep(1.0 / max(cam.fps, 1))
 
     worker_thread = threading.Thread(target=capture_worker, daemon=True)
     worker_thread.start()
@@ -304,7 +341,7 @@ def run_preview_server(
             <span class="badge-live">LIVE FEED</span>
         </div>
         <div class="video-container">
-            <img id="live-img" src="/snapshot.jpg" alt="Feed">
+            <img id="live-img" src="/stream.mjpg" alt="Feed">
         </div>
         <div class="stats-grid">
             <div class="stat-box">
@@ -322,24 +359,10 @@ def run_preview_server(
         </div>
     </div>
     <script>
-        let isFetching = false;
-        function streamLoop() {
-            if (isFetching) return;
-            isFetching = true;
-            const nextImg = new Image();
-            nextImg.onload = () => {
-                document.getElementById('live-img').src = nextImg.src;
-                isFetching = false;
-                requestAnimationFrame(streamLoop);
-            };
-            nextImg.onerror = () => {
-                isFetching = false;
-                setTimeout(streamLoop, 150);
-            };
-            nextImg.src = '/snapshot.jpg?t=' + Date.now();
-        }
-        streamLoop();
-
+        const img = document.getElementById('live-img');
+        img.onerror = () => {
+            setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
+        };
         setInterval(() => {
             fetch('/telemetry')
                 .then(r => r.json())
@@ -361,8 +384,41 @@ def run_preview_server(
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+            elif self.path.startswith("/stream.mjpg"):
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=FRAME")
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.send_header("Pragma", "no-cache")
+                    self.send_header("Expires", "0")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+
+                    last_id = -1
+                    while not stop_event.is_set():
+                        with condition:
+                            while state["frame_id"] == last_id and not stop_event.is_set():
+                                condition.wait(timeout=0.1)
+                            if stop_event.is_set():
+                                break
+                            jpeg_bytes = state["jpeg"]
+                            last_id = state["frame_id"]
+
+                        if jpeg_bytes is None:
+                            continue
+
+                        header = (
+                            b"--FRAME\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            b"Content-Length: " + str(len(jpeg_bytes)).encode("ascii") + b"\r\n\r\n"
+                        )
+                        self.wfile.write(header + jpeg_bytes + b"\r\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
             elif self.path.startswith("/snapshot.jpg"):
-                with lock:
+                with condition:
                     jpeg_bytes = state["jpeg"]
                 if jpeg_bytes:
                     try:
@@ -379,7 +435,7 @@ def run_preview_server(
                     self.end_headers()
 
             elif self.path.startswith("/telemetry"):
-                with lock:
+                with condition:
                     telemetry = {
                         "fps": state["fps"],
                         "pitch": state["pitch"],
@@ -412,6 +468,8 @@ def run_preview_server(
         logger.info("Shutting down preview server...")
     finally:
         stop_event.set()
+        with condition:
+            condition.notify_all()
         server.server_close()
         worker_thread.join(timeout=1.0)
         cam.release()
@@ -428,6 +486,7 @@ def run_stream(
     i2c_bus: int,
     i2c_addr: int,
     pixel_format: str = "UYVY",
+    vflip: bool = True,
     rotate_180: bool = False,
 ) -> None:
     """Continuous production streaming loop to remote Ingest Server."""
@@ -448,6 +507,7 @@ def run_stream(
         height=height,
         fps=fps,
         pixel_format=pixel_format,
+        vflip=vflip,
         rotate_180=rotate_180,
     )
     if not cam.open():
@@ -543,7 +603,11 @@ def main() -> None:
     parser.add_argument("--preview-port", type=int, default=8080, help="Port for diagnostic preview server")
     parser.add_argument("--device", default=None, help="Camera device node e.g. /dev/video0")
     parser.add_argument("--pixel-format", default=None, help="Camera pixel format (UYVY, YUYV, MJPG)")
+    parser.add_argument("--vflip", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable vertical flip")
     parser.add_argument("--rotate-180", action="store_true", default=None, help="Rotate frames 180 degrees")
+    parser.add_argument("--preview-width", type=int, default=None, help="Preview downscale width")
+    parser.add_argument("--preview-height", type=int, default=None, help="Preview downscale height")
+    parser.add_argument("--preview-quality", type=int, default=None, help="Preview JPEG compression quality (1-100)")
 
     args = parser.parse_args()
 
@@ -558,7 +622,11 @@ def main() -> None:
     height = dev_cfg.get("height", 720)
     fps = dev_cfg.get("fps", 30)
     pixel_format = args.pixel_format or dev_cfg.get("pixel_format", "UYVY")
+    vflip = args.vflip if args.vflip is not None else dev_cfg.get("vflip", True)
     rotate_180 = args.rotate_180 if args.rotate_180 is not None else dev_cfg.get("rotate_180", False)
+    preview_width = args.preview_width or dev_cfg.get("preview_width", 640)
+    preview_height = args.preview_height or dev_cfg.get("preview_height", 360)
+    preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 65)
 
     i2c_bus = imu_cfg.get("i2c_bus", 1)
     i2c_addr = imu_cfg.get("i2c_address", 0x68)
@@ -576,6 +644,7 @@ def main() -> None:
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
             pixel_format=pixel_format,
+            vflip=vflip,
             rotate_180=rotate_180,
         )
     elif args.mode == "snapshot":
@@ -587,6 +656,7 @@ def main() -> None:
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
             pixel_format=pixel_format,
+            vflip=vflip,
             rotate_180=rotate_180,
         )
     elif args.mode == "test-imu":
@@ -600,7 +670,11 @@ def main() -> None:
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
             pixel_format=pixel_format,
+            vflip=vflip,
             rotate_180=rotate_180,
+            preview_width=preview_width,
+            preview_height=preview_height,
+            preview_quality=preview_quality,
         )
     elif args.mode == "stream":
         run_stream(
@@ -613,6 +687,7 @@ def main() -> None:
             i2c_bus=i2c_bus,
             i2c_addr=i2c_addr,
             pixel_format=pixel_format,
+            vflip=vflip,
             rotate_180=rotate_180,
         )
     else:

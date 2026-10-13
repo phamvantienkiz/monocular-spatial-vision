@@ -110,3 +110,53 @@ def test_load_config_missing_and_existing():
     assert isinstance(cfg, dict)
     assert "device" in cfg
     assert "imu" in cfg
+
+
+def test_camera_driver_vflip_and_downscale():
+    """Validates CameraDriver raw read, vertical flip, and preview downscaling."""
+    cam = CameraDriver(
+        device="/dev/video0",
+        width=1280,
+        height=720,
+        fps=30,
+        pixel_format="UYVY",
+        mock_mode=True,
+        vflip=True,
+        rotate_180=False,
+    )
+    assert cam.open() is True
+    assert cam.vflip is True
+    assert cam.rotate_180 is False
+
+    # Test read_raw
+    ts_ns, raw_frame = cam.read_raw()
+    assert ts_ns > 0
+    assert raw_frame is not None
+    assert raw_frame.shape == (720, 1280, 3)
+
+    # Test read_frame with preview downscaling
+    ts_ns, scaled_frame, jpeg_bytes = cam.read_frame(
+        encode_jpeg=True,
+        jpeg_quality=65,
+        resize_to=(640, 360),
+    )
+    assert ts_ns > 0
+    assert scaled_frame is not None
+    assert scaled_frame.shape == (360, 640, 3)
+    assert isinstance(jpeg_bytes, bytes)
+    assert len(jpeg_bytes) > 0
+
+    cam.release()
+    assert cam._is_opened is False
+
+
+def test_capture_config_preview_parameters():
+    """Validates capture_pi.yaml contains required preview and vflip configurations."""
+    cfg = load_config("configs/capture_pi.yaml")
+    dev = cfg.get("device", {})
+    assert dev.get("vflip") is True
+    assert dev.get("rotate_180") is False
+    assert dev.get("preview_width") == 640
+    assert dev.get("preview_height") == 360
+    assert dev.get("preview_quality") == 65
+

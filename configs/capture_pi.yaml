@@ -7,7 +7,11 @@ device:
   height: 720
   fps: 30
   pixel_format: "UYVY"  # Options: UYVY (native for Pcam 5C), YUYV, MJPG
-  rotate_180: true      # Pcam 5C mounted inverted on robot (rotates 180 deg)
+  vflip: true           # Vertical flip for OV5640 BSI sensor array
+  rotate_180: false     # Hardware logo/text is upright, only vertical flip needed
+  preview_width: 640    # Preview downscale width for smooth Wi-Fi stream
+  preview_height: 360   # Preview downscale height (16:9 nHD)
+  preview_quality: 65   # Fast JPEG quality for Wi-Fi streaming
 
 imu:
   i2c_bus: 1

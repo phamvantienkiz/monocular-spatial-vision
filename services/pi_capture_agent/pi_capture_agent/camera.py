@@ -23,6 +23,7 @@ class CameraDriver:
         fps: int = 30,
         pixel_format: str = "UYVY",
         mock_mode: bool = False,
+        vflip: bool = True,
         rotate_180: bool = False,
     ):
         self.device = device
@@ -31,6 +32,7 @@ class CameraDriver:
         self.fps = fps
         self.pixel_format = pixel_format
         self.mock_mode = mock_mode
+        self.vflip = vflip
         self.rotate_180 = rotate_180
         self._cap = None
         self._is_opened = False
@@ -186,43 +188,74 @@ class CameraDriver:
         _, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
         return ts_ns, frame, jpeg_buf.tobytes()
 
-    def read_frame(self, jpeg_quality: int = 75) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
-        """Reads a single frame from the camera.
+    def read_raw(self) -> Tuple[int, Optional[np.ndarray]]:
+        """Reads a single decoded BGR frame from the camera without JPEG compression.
+
+        Returns:
+            Tuple[int, Optional[np.ndarray]]:
+                - Timestamp in nanoseconds
+                - Decoded BGR numpy array
+        """
+        if not self._is_opened:
+            raise RuntimeError("CameraDriver is not opened. Call open() first.")
+
+        import cv2
+
+        if self.mock_mode or self._cap is None:
+            self.is_synthetic_active = True
+            ts_ns, frame, _ = self._generate_synthetic_frame()
+        else:
+            ts_ns = time.time_ns()
+            ret, frame = self._cap.read()
+            if not ret or frame is None:
+                self.is_synthetic_active = True
+                logger.warning("Failed to grab frame from %s. Returning synthetic fallback.", self.device)
+                ts_ns, frame, _ = self._generate_synthetic_frame()
+            else:
+                self.is_synthetic_active = False
+
+        if frame is not None:
+            # Apply orientation correction: vflip corrects inverted OV5640 sensor array
+            if self.vflip:
+                frame = cv2.flip(frame, 0)
+            if self.rotate_180:
+                frame = cv2.flip(frame, -1)
+
+        return ts_ns, frame
+
+    def read_frame(
+        self,
+        encode_jpeg: bool = True,
+        jpeg_quality: int = 75,
+        resize_to: Optional[Tuple[int, int]] = None,
+    ) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
+        """Reads a single frame from the camera, with optional resize and JPEG compression.
 
         Args:
+            encode_jpeg: Whether to compress to JPEG.
             jpeg_quality: JPEG compression quality (1-100, default: 75).
+            resize_to: Optional (width, height) tuple to downscale frame before encoding.
 
         Returns:
             Tuple[int, Optional[np.ndarray], Optional[bytes]]:
                 - Timestamp in nanoseconds
                 - Decoded BGR numpy array
-                - Compressed JPEG byte array
+                - Compressed JPEG byte array (or None if encode_jpeg=False)
         """
-        if not self._is_opened:
-            raise RuntimeError("CameraDriver is not opened. Call open() first.")
-
-        if self.mock_mode or self._cap is None:
-            self.is_synthetic_active = True
-            return self._generate_synthetic_frame()
+        ts_ns, frame = self.read_raw()
+        if frame is None:
+            return ts_ns, None, None
 
         import cv2
 
-        ts_ns = time.time_ns()
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            self.is_synthetic_active = True
-            logger.warning("Failed to grab frame from %s. Returning synthetic fallback.", self.device)
-            return self._generate_synthetic_frame()
+        if resize_to is not None:
+            frame = cv2.resize(frame, resize_to, interpolation=cv2.INTER_LINEAR)
 
-        self.is_synthetic_active = False
-
-        if self.rotate_180:
-            frame = cv2.flip(frame, -1)
-
-        # Compress to JPEG
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
-        success, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
-        jpeg_bytes = jpeg_buf.tobytes() if success else None
+        jpeg_bytes: Optional[bytes] = None
+        if encode_jpeg:
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
+            success, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
+            jpeg_bytes = jpeg_buf.tobytes() if success else None
 
         return ts_ns, frame, jpeg_bytes
 
