@@ -37,6 +37,33 @@ class CameraDriver:
         self._frame_count = 0
         self.is_synthetic_active = mock_mode
 
+    def _negotiate_unicam_pipeline(self) -> None:
+        """Configures V4L2 Media Controller subdevice pad format if Unicam is present."""
+        import glob
+        import re
+        import subprocess
+
+        for m in sorted(glob.glob("/dev/media*")):
+            try:
+                r = subprocess.run(["media-ctl", "-d", m, "-p"], capture_output=True, text=True, timeout=2)
+                if r.returncode != 0 or not re.search(r"^driver\s+unicam", r.stdout, re.M):
+                    continue
+                sensor = re.search(r"entity \d+: (ov5640 [\w-]+)", r.stdout)
+                if sensor:
+                    sensor_entity = sensor.group(1)
+                    fmt_cmd = [
+                        "media-ctl",
+                        "-d",
+                        m,
+                        "-V",
+                        f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}]",
+                    ]
+                    subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
+                    logger.info("Negotiated media-ctl pipeline: %s:0 -> %dx%d UYVY", sensor_entity, self.width, self.height)
+                    break
+            except Exception as e:
+                logger.debug("media-ctl negotiation notice: %s", e)
+
     def open(self) -> bool:
         """Opens camera device and sets resolution and codec."""
         if self.mock_mode:
@@ -47,6 +74,9 @@ class CameraDriver:
 
         try:
             import cv2
+
+            # Negotiate subdevice pad resolution via Media Controller (required by Unicam)
+            self._negotiate_unicam_pipeline()
 
             backend = cv2.CAP_V4L2 if hasattr(cv2, "CAP_V4L2") else cv2.CAP_ANY
 
