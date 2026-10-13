@@ -3,8 +3,8 @@
 
 device:
   video_device: "/dev/video0"
-  width: 640
-  height: 360
+  width: 1280
+  height: 720
   fps: 30
   pixel_format: "UYVY"  # Default on Pi 3 Unicam + OV5640
   rotate_180: false     # Hardware flip via v4l2-ctl subdev, bypass cv2.flip software overhead

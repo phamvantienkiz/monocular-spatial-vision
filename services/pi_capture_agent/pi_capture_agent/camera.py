@@ -47,8 +47,8 @@ class CameraDriver:
     def __init__(
         self,
         device: Union[str, int] = "/dev/video0",
-        width: int = 640,
-        height: int = 360,
+        width: int = 1280,
+        height: int = 720,
         fps: int = 30,
         pixel_format: str = "UYVY",
         buffer_size: int = 1,
@@ -58,8 +58,8 @@ class CameraDriver:
 
         Args:
             device: V4L2 device path (e.g. '/dev/video0') or device index.
-            width: Desired image width (default: 640).
-            height: Desired image height (default: 360).
+            width: Desired image width (default: 1280).
+            height: Desired image height (default: 720).
             fps: Desired capture frame rate (default: 30).
             pixel_format: Camera pixel format ("MJPG", "UYVY", or "YUYV").
             buffer_size: OpenCV internal V4L2 buffer size (1 minimizes latency).
