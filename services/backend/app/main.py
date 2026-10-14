@@ -13,10 +13,10 @@ from app.core.config import settings
 from app.core.logging import setup_logging, logger
 from app.middlewares import register_middlewares
 from app.api.v1.router import api_v1_router
-from app.services.ingest_service import IngestService
+from app.services.ingest_service import get_ingest_service
 from app.services.model_service import ModelService
 
-ingest_service = IngestService(port=settings.ingest_port, buffer_size=settings.ring_buffer_size)
+ingest_service = get_ingest_service()
 model_service = ModelService(engine_path=settings.model_engine_path, conf_thresh=settings.confidence_threshold)
 
 

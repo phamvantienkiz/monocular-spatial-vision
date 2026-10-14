@@ -38,8 +38,8 @@ def load_config(config_path: str) -> Dict[str, Any]:
     default_config: Dict[str, Any] = {
         "device": {
             "video_device": "/dev/video0",
-            "width": 640,
-            "height": 360,
+            "width": 1280,
+            "height": 720,
             "fps": 30,
             "pixel_format": "UYVY",
             "rotate_180": False,
@@ -448,8 +448,8 @@ def run_stream(
     target_fps = int(dev_cfg.get("fps", 30))
     frame_interval = 1.0 / max(target_fps, 1)
 
-    width = int(dev_cfg.get("width", 640))
-    height = int(dev_cfg.get("height", 360))
+    width = int(dev_cfg.get("width", 1280))
+    height = int(dev_cfg.get("height", 720))
     rotate_180 = bool(dev_cfg.get("rotate_180", False))
     jpeg_quality = int(dev_cfg.get("jpeg_quality", 60))
 
@@ -591,12 +591,6 @@ def run_stream(
                 frames_sent = 0
                 bytes_sent = 0
                 t_stats = now
-
-            # Throttle to target FPS
-            dt = time.time() - t0
-            sleep_time = frame_interval - dt
-            if sleep_time > 0:
-                time.sleep(sleep_time)
 
     finally:
         logger.info("Cleaning up streaming resources...")

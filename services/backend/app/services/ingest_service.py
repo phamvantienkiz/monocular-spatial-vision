@@ -11,6 +11,7 @@ import logging
 import socket
 import struct
 import threading
+import time
 from typing import Optional, Tuple
 
 import cv2
@@ -61,14 +62,22 @@ def _unpack_header(raw: bytes) -> dict:
 class IngestService:
     """TCP Server daemon receiving raw frames and telemetry from Pi 3."""
 
-    def __init__(self, port: int = 9876, buffer_size: int = 5):
+    def __init__(self, port: int = 9876, buffer_size: int = 5, rotate_180: bool = False):
         self.port = port
         self.buffer_size = buffer_size
+        self.rotate_180 = rotate_180
         self._buffer: collections.deque = collections.deque(maxlen=buffer_size)
         self._lock = threading.Lock()
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._server_sock: Optional[socket.socket] = None
+
+        # Statistics & telemetry
+        self._fps: float = 0.0
+        self._frame_count: int = 0
+        self._last_stats_time: float = time.time()
+        self._last_telemetry: Optional[dict] = None
+        self._is_client_connected: bool = False
 
     def start(self) -> None:
         """Starts background TCP ingest listener thread."""
@@ -101,7 +110,35 @@ class IngestService:
         with self._lock:
             if not self._buffer:
                 return None
+            item = self._buffer[-1]
+            return item[0], item[1]
+
+    def get_latest_package(self) -> Optional[Tuple[dict, np.ndarray, bytes]]:
+        """Retrieves the newest (header_dict, bgr_frame, jpeg_bytes) from the ring buffer."""
+        with self._lock:
+            if not self._buffer:
+                return None
             return self._buffer[-1]
+
+    def get_latest_jpeg(self) -> Optional[bytes]:
+        """Retrieves raw JPEG byte payload of the latest frame."""
+        with self._lock:
+            if not self._buffer:
+                return None
+            return self._buffer[-1][2]
+
+    def get_latest_telemetry(self) -> Optional[dict]:
+        """Retrieves the latest telemetry dictionary from received header."""
+        with self._lock:
+            return self._last_telemetry
+
+    def get_fps(self) -> float:
+        """Returns the current measured incoming FPS from the capture node."""
+        return self._fps
+
+    def is_connected(self) -> bool:
+        """Returns True if a capture client is currently connected."""
+        return self._is_client_connected
 
     # ------------------------------------------------------------------
     # Internal
@@ -125,10 +162,13 @@ class IngestService:
                 break
 
             logger.info("Pi connected from %s:%d — receiving frames.", addr[0], addr[1])
+            self._is_client_connected = True
             client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
             client_sock.settimeout(5.0)
             self._receive_loop(client_sock, addr)
+            self._is_client_connected = False
+            self._fps = 0.0
 
         logger.info("Ingest listener thread exited.")
 
@@ -160,16 +200,32 @@ class IngestService:
                     logger.info("Pi %s:%d disconnected (payload EOF).", addr[0], addr[1])
                     break
 
-                # 4. Decode JPEG → BGR ndarray
+                # 4. Decode JPEG → BGR ndarray (offloaded to Laptop/Jetson)
                 buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
                 bgr_frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
                 if bgr_frame is None:
                     logger.warning("cv2.imdecode failed on frame #%d. Skipping.", header["frame_id"])
                     continue
 
-                # 5. Push (header, frame) into ring buffer — overwrites oldest if full
+                if self.rotate_180:
+                    bgr_frame = cv2.flip(bgr_frame, -1)
+                    success, enc = cv2.imencode(".jpg", bgr_frame)
+                    if success:
+                        jpeg_bytes = enc.tobytes()
+
+                # Track frame rate
+                self._frame_count += 1
+                now = time.time()
+                elapsed = now - self._last_stats_time
+                if elapsed >= 1.0:
+                    self._fps = self._frame_count / elapsed
+                    self._frame_count = 0
+                    self._last_stats_time = now
+
+                # 5. Push (header, frame, jpeg) into ring buffer — overwrites oldest if full
                 with self._lock:
-                    self._buffer.append((header, bgr_frame))
+                    self._last_telemetry = header
+                    self._buffer.append((header, bgr_frame, jpeg_bytes))
 
         except (socket.timeout, ConnectionResetError, OSError) as e:
             logger.warning("Connection error from %s:%d: %s", addr[0], addr[1], e)
@@ -179,3 +235,20 @@ class IngestService:
             except Exception:
                 pass
             logger.info("Pi %s:%d session closed.", addr[0], addr[1])
+
+
+# Global singleton instance provider
+_global_ingest_service: Optional[IngestService] = None
+
+
+def get_ingest_service() -> IngestService:
+    """Returns singleton IngestService instance configured from application settings."""
+    global _global_ingest_service
+    if _global_ingest_service is None:
+        from app.core.config import settings
+        _global_ingest_service = IngestService(
+            port=settings.ingest_port,
+            buffer_size=settings.ring_buffer_size,
+            rotate_180=settings.rotate_180,
+        )
+    return _global_ingest_service
