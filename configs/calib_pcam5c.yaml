@@ -17,12 +17,12 @@ camera:
     cx: 640.0
     cy: 360.0
 
-  # Note for 640x360 downscaled/binned mode (scale factor 0.5, preserves exact IPM ground metrics):
-  # intrinsics_640x360:
-  #   fx: 460.0
-  #   fy: 460.0
+  # Note for 640x480 native sensor mode (VGA 4:3, full vertical FOV):
+  # intrinsics_640x480:
+  #   fx: 613.3
+  #   fy: 613.3
   #   cx: 320.0
-  #   cy: 180.0
+  #   cy: 240.0
 
   # Lens distortion coefficients [k1, k2, p1, p2, k3]
   distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0]

@@ -157,7 +157,7 @@ def test_capture_config_preview_parameters():
     assert dev.get("vflip") is True
     assert dev.get("rotate_180") is False
     assert dev.get("preview_width") == 640
-    assert dev.get("preview_height") == 360
+    assert dev.get("preview_height") == 480
     assert dev.get("preview_quality") == 65
 
     # Check optimization section
@@ -224,8 +224,8 @@ def test_cli_main_argparse(monkeypatch):
     assert mock_called["jpeg_quality"] == 70
     assert mock_called["use_hardware_flip"] is True
     assert mock_called["threaded"] is True
-    assert mock_called["width"] == 1280
-    assert mock_called["height"] == 720
+    assert mock_called["width"] == 640
+    assert mock_called["height"] == 480
 
 
 def test_cli_main_stage2_custom_resolution_and_threading(monkeypatch):

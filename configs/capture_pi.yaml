@@ -3,15 +3,15 @@
 
 device:
   video_device: "/dev/video0"
-  width: 1280
-  height: 720
+  width: 640
+  height: 480
   fps: 30
   pixel_format: "UYVY"  # Options: UYVY (native for Pcam 5C), YUYV, MJPG
   vflip: true           # Vertical flip for OV5640 BSI sensor array
   rotate_180: false     # Hardware logo/text is upright, only vertical flip needed
   use_hardware_flip: true # Enable on-chip OV5640 hardware vertical flip
-  preview_width: 640    # Preview downscale width for smooth Wi-Fi stream
-  preview_height: 360   # Preview downscale height (16:9 nHD)
+  preview_width: 640    # Preview width
+  preview_height: 480   # Preview height (4:3 VGA native sensor mode)
   preview_quality: 65   # Fast JPEG quality for Wi-Fi streaming
 
 optimization:
@@ -19,7 +19,7 @@ optimization:
   jpeg_backend: "turbojpeg"  # Prioritize PyTurboJPEG (ARM NEON) with OpenCV fallback
   jpeg_quality: 70           # Optimal balance between visual fidelity and stream latency
   enable_threading: true     # Decoupled Producer-Consumer capture pipeline (multi-core)
-  target_resolution: "640x360" # "640x360" (optimal for YOLO & 30 FPS) or "1280x720" (native 720p)
+  target_resolution: "640x480" # Native sensor 4:3 mode (no CPU resize overhead)
 
 imu:
   i2c_bus: 1
