@@ -234,4 +234,7 @@ data/debug/*
 
 *.log
 logs/*.log
-!logs/.gitkeep
+!logs/.gitkeep
+
+#user customer
+docs/ai/
