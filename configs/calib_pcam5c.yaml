@@ -7,7 +7,7 @@ camera:
   image_height: 720
   frame_rate: 30
 
-  # Pinhole Camera Matrix K
+  # Pinhole Camera Matrix K (Native 1280x720)
   # [fx,  0, cx]
   # [ 0, fy, cy]
   # [ 0,  0,  1]
@@ -16,6 +16,13 @@ camera:
     fy: 920.0
     cx: 640.0
     cy: 360.0
+
+  # Note for 640x360 downscaled/binned mode (scale factor 0.5, preserves exact IPM ground metrics):
+  # intrinsics_640x360:
+  #   fx: 460.0
+  #   fy: 460.0
+  #   cx: 320.0
+  #   cy: 180.0
 
   # Lens distortion coefficients [k1, k2, p1, p2, k3]
   distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0]

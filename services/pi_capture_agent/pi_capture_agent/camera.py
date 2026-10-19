@@ -76,7 +76,17 @@ class CameraDriver:
                             "-V",
                             f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}]",
                         ]
-                        subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
+                        res2 = subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
+                        if res2.returncode != 0 and (self.width, self.height) != (1280, 720):
+                            # If sensor subdev driver only exposes 1280x720, configure 720p and downscale
+                            fmt_cmd_720 = [
+                                "media-ctl",
+                                "-d",
+                                m,
+                                "-V",
+                                f"'{sensor_entity}':0 [fmt:UYVY8_1X16/1280x720@1/{self.fps}]",
+                            ]
+                            subprocess.run(fmt_cmd_720, capture_output=True, text=True, timeout=3)
 
                     # Explicitly set sensor frame rate on V4L2 subdevices
                     for subdev in sorted(glob.glob("/dev/v4l-subdev*")):
@@ -283,6 +293,10 @@ class CameraDriver:
                 self.is_synthetic_active = False
 
         if frame is not None:
+            # If sensor delivered a different resolution from requested dimensions, scale cleanly
+            if (frame.shape[1], frame.shape[0]) != (self.width, self.height):
+                frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+
             # Apply orientation correction:
             # Only perform software CPU flip if hardware flip was not applied on sensor
             if self.vflip and not self._hw_vflip_applied:

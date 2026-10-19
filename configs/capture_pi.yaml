@@ -18,6 +18,8 @@ optimization:
   use_hardware_flip: true
   jpeg_backend: "turbojpeg"  # Prioritize PyTurboJPEG (ARM NEON) with OpenCV fallback
   jpeg_quality: 70           # Optimal balance between visual fidelity and stream latency
+  enable_threading: true     # Decoupled Producer-Consumer capture pipeline (multi-core)
+  target_resolution: "640x360" # "640x360" (optimal for YOLO & 30 FPS) or "1280x720" (native 720p)
 
 imu:
   i2c_bus: 1

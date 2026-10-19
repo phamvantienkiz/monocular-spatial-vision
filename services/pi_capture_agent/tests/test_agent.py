@@ -223,4 +223,39 @@ def test_cli_main_argparse(monkeypatch):
     assert "jpeg_quality" in mock_called
     assert mock_called["jpeg_quality"] == 70
     assert mock_called["use_hardware_flip"] is True
+    assert mock_called["threaded"] is True
+    assert mock_called["width"] == 1280
+    assert mock_called["height"] == 720
+
+
+def test_cli_main_stage2_custom_resolution_and_threading(monkeypatch):
+    """Validates CLI stage 2 arguments --width, --height, and --no-threaded."""
+    from pi_capture_agent.cli import main
+
+    mock_called = {}
+
+    def mock_run_stream(**kwargs):
+        mock_called.update(kwargs)
+
+    monkeypatch.setattr("pi_capture_agent.cli.run_stream", mock_run_stream)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["cli.py", "--mode", "stream", "--width", "640", "--height", "360", "--no-threaded"],
+    )
+
+    main()
+    assert mock_called["width"] == 640
+    assert mock_called["height"] == 360
+    assert mock_called["threaded"] is False
+
+
+def test_camera_driver_scale_to_custom_dimensions():
+    """Validates CameraDriver auto-scales to requested dimensions if raw shape differs."""
+    cam = CameraDriver(mock_mode=True, width=640, height=360)
+    cam.open()
+    ts_ns, frame = cam.read_raw()
+    assert ts_ns > 0
+    assert frame is not None
+    assert frame.shape == (360, 640, 3)
+    cam.release()
 
