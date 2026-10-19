@@ -365,7 +365,7 @@ def run_preview_server(
         </div>
         <div class="stats-grid">
             <div class="stat-box">
-                <div class="stat-label">Capture FPS</div>
+                <div class="stat-label">Pi / Laptop FPS</div>
                 <div class="stat-value fps-val" id="fps-txt">-- FPS</div>
             </div>
             <div class="stat-box">
@@ -380,28 +380,35 @@ def run_preview_server(
     </div>
     <script>
         const img = document.getElementById('live-img');
-        let useSnapshot = false;
-        img.onerror = () => {
-            if (!useSnapshot) {
-                useSnapshot = true;
-                pollSnapshot();
+        let renderCount = 0;
+        let lastRenderTime = performance.now();
+        let displayFps = 0.0;
+
+        img.onload = () => {
+            renderCount++;
+            const now = performance.now();
+            if (now - lastRenderTime >= 1000) {
+                displayFps = (renderCount * 1000) / (now - lastRenderTime);
+                renderCount = 0;
+                lastRenderTime = now;
             }
         };
-        function pollSnapshot() {
-            if (!useSnapshot) return;
-            img.src = '/snapshot.jpg?t=' + Date.now();
-            setTimeout(pollSnapshot, 66);
-        }
+
+        img.onerror = () => {
+            setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
+        };
+
         setInterval(() => {
             fetch('/telemetry')
                 .then(r => r.json())
                 .then(d => {
-                    document.getElementById('fps-txt').innerText = d.fps.toFixed(1) + ' FPS';
+                    const disp = displayFps > 0 ? displayFps.toFixed(1) : d.fps.toFixed(1);
+                    document.getElementById('fps-txt').innerText = `${d.fps.toFixed(1)} / ${disp} FPS`;
                     document.getElementById('att-txt').innerText = (d.pitch >= 0 ? '+' : '') + d.pitch.toFixed(1) + '° / ' + (d.roll >= 0 ? '+' : '') + d.roll.toFixed(1) + '°';
                     document.getElementById('accel-txt').innerText = `${d.ax.toFixed(2)}, ${d.ay.toFixed(2)}, ${d.az.toFixed(2)}g`;
                 })
                 .catch(() => {});
-        }, 150);
+        }, 200);
     </script>
 </body>
 </html>"""

@@ -58,35 +58,27 @@ class CameraDriver:
                 sensor = re.search(r"entity \d+: (ov5640 [\w-]+)", r.stdout)
                 if sensor:
                     sensor_entity = sensor.group(1)
-                    # Negotiate pad format with target FPS (e.g. @1/30)
+                    # Hardware constraint: OV5640 CSI-2 sensor hardware timing supports native 1280x720 @ 30 FPS.
+                    # Setting non-standard sensor modes (like 640x360) directly in media-ctl breaks sensor PLL clock.
+                    # Therefore, sensor pad is locked to native 1280x720, and CameraDriver handles 640x360 scaling.
+                    sensor_w, sensor_h = (1280, 720) if (self.width, self.height) == (640, 360) else (self.width, self.height)
                     fmt_cmd_fps = [
                         "media-ctl",
                         "-d",
                         m,
                         "-V",
-                        f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}@1/{self.fps}]",
+                        f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{sensor_w}x{sensor_h}@1/{self.fps}]",
                     ]
                     res = subprocess.run(fmt_cmd_fps, capture_output=True, text=True, timeout=3)
                     if res.returncode != 0:
-                        # Fallback without frame interval if media-ctl syntax variant
                         fmt_cmd = [
                             "media-ctl",
                             "-d",
                             m,
                             "-V",
-                            f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}]",
+                            f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{sensor_w}x{sensor_h}]",
                         ]
-                        res2 = subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
-                        if res2.returncode != 0 and (self.width, self.height) != (1280, 720):
-                            # If sensor subdev driver only exposes 1280x720, configure 720p and downscale
-                            fmt_cmd_720 = [
-                                "media-ctl",
-                                "-d",
-                                m,
-                                "-V",
-                                f"'{sensor_entity}':0 [fmt:UYVY8_1X16/1280x720@1/{self.fps}]",
-                            ]
-                            subprocess.run(fmt_cmd_720, capture_output=True, text=True, timeout=3)
+                        subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
 
                     # Explicitly set sensor frame rate on V4L2 subdevices
                     for subdev in sorted(glob.glob("/dev/v4l-subdev*")):
@@ -187,8 +179,12 @@ class CameraDriver:
                 self._cap.set(cv2.CAP_PROP_FOURCC, float(fourcc))
 
             # Configure resolution and FPS
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.width))
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.height))
+            # Hardware constraint: OV5640 16:9 mode requires native 1280x720 sensor timing.
+            # If 640x360 is requested, capture at 1280x720 and let read_raw() scale cleanly to 640x360.
+            v4l_w = 1280 if (self.width, self.height) == (640, 360) else self.width
+            v4l_h = 720 if (self.width, self.height) == (640, 360) else self.height
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(v4l_w))
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(v4l_h))
             self._cap.set(cv2.CAP_PROP_FPS, float(self.fps))
 
             # Set buffer size to 1 to eliminate frame latency
