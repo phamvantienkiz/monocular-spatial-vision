@@ -50,10 +50,12 @@ flowchart TD
 
 | Tệp tài liệu | Nội dung trọng tâm | Độ phức tạp | Kỳ vọng cải thiện |
 | :--- | :--- | :---: | :---: |
-| [01-hardware-flip-ov5640.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/01-hardware-flip-ov5640.md) | Kích hoạt lật ảnh silicon bằng thanh ghi cảm biến OV5640 qua V4L2, loại bỏ `cv2.flip` | Thấp | Giảm 10–15ms CPU / frame |
-| [02-arm-neon-turbojpeg.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/02-arm-neon-turbojpeg.md) | Tích hợp thư viện `PyTurboJPEG` tận dụng chỉ lệnh SIMD ARM NEON tăng tốc nén JPEG | Trung bình | Rút ngắn nén từ 55ms xuống ~18ms, đạt 30 FPS |
-| [03-bcm2835-codec-hardware-m2m.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/03-bcm2835-codec-hardware-m2m.md) | Khai thác bộ mã hóa phần cứng VideoCore IV của Pi 3 qua V4L2 M2M (`/dev/video11`) | Nâng cao | CPU tiêu thụ giảm xuống < 5%, sẵn sàng H.264 |
-| [04-comparative-benchmark-and-plan.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/04-comparative-benchmark-and-plan.md) | Bảng đối chuẩn hiệu năng, ma trận rủi ro và lộ trình kiểm thử tự động | Tổng hợp | Đối chuẩn nghiệm thu toàn diện |
+| [01-hardware-flip-ov5640.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/01-hardware-flip-ov5640.md) | Kích hoạt lật ảnh silicon bằng thanh ghi cảm biến OV5640 qua V4L2, loại bỏ `cv2.flip` | Thấp (Đã xong) | Tiết kiệm 10–15ms CPU / frame |
+| [02-arm-neon-turbojpeg.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/02-arm-neon-turbojpeg.md) | Tích hợp thư viện `PyTurboJPEG` tận dụng chỉ lệnh SIMD ARM NEON tăng tốc nén JPEG | Trung bình (Đã xong) | Nén NEON vector với TJSAMP_420 + FastDCT |
+| [03-bcm2835-codec-hardware-m2m.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/03-bcm2835-codec-hardware-m2m.md) | Khai thác bộ mã hóa phần cứng VideoCore IV của Pi 3 qua V4L2 M2M (`/dev/video11`) | Nâng cao | CPU tiêu thụ giảm xuống < 8%, nén 720p trong 4.2ms |
+| [04-comparative-benchmark-and-plan.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/04-comparative-benchmark-and-plan.md) | Bảng đối chuẩn hiệu năng thực nghiệm trên Pi 3 và lộ trình triển khai 2 giai đoạn | Tổng hợp | Đối chuẩn nghiệm thu toàn diện |
+| [05-sensor-hardware-binning-640.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/05-sensor-hardware-binning-640.md) | Phân tích Crop vs Resize cho YOLO; cấu hình Hardware Binning 640x360 bảo toàn Full FOV | Trung bình (Giai đoạn 2A) | Đạt ngay 28–30 FPS, tải CPU < 35%, tăng nhạy sáng |
+| [06-multithreaded-pipeline-and-videocore-vpu.md](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/solutions/06-multithreaded-pipeline-and-videocore-vpu.md) | Đường ống bất đồng bộ Producer-Consumer đa nhân và tích hợp phần cứng VideoCore IV VPU | Nâng cao (Giai đoạn 2B) | Đạt 30 FPS kịch trần ở 720p, tải CPU < 8% |
 
 ---
 
