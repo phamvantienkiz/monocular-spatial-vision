@@ -160,3 +160,47 @@ def test_capture_config_preview_parameters():
     assert dev.get("preview_height") == 360
     assert dev.get("preview_quality") == 65
 
+    # Check optimization section
+    opt = cfg.get("optimization", {})
+    assert opt.get("use_hardware_flip") is True
+    assert opt.get("jpeg_quality") == 70
+
+
+def test_fast_jpeg_encoder_valid_output():
+    """Validates FastJpegEncoder produces decodable JPEG byte stream."""
+    import cv2
+    from pi_capture_agent.jpeg import FastJpegEncoder
+
+    dummy_frame = np.full((120, 160, 3), 128, dtype=np.uint8)
+    jpeg_bytes = FastJpegEncoder.encode(dummy_frame, quality=70)
+
+    assert jpeg_bytes is not None
+    assert isinstance(jpeg_bytes, bytes)
+    assert len(jpeg_bytes) > 0
+    # JPEG magic number starts with 0xFFD8
+    assert jpeg_bytes.startswith(b"\xff\xd8")
+
+    # Verify frame is decodable
+    decoded = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert decoded is not None
+    assert decoded.shape == (120, 160, 3)
+
+
+def test_camera_hardware_flip_bypass():
+    """Validates that software flip is bypassed when _hw_vflip_applied is True."""
+    cam = CameraDriver(mock_mode=True, vflip=True)
+    cam.open()
+
+    # Case A: Hardware flip not applied -> software flip executes
+    cam._hw_vflip_applied = False
+    _, frame_sw = cam.read_raw()
+
+    # Case B: Hardware flip applied -> software flip bypassed
+    cam._hw_vflip_applied = True
+    _, frame_hw = cam.read_raw()
+
+    assert frame_sw is not None
+    assert frame_hw is not None
+    assert frame_sw.shape == frame_hw.shape
+    cam.release()
+

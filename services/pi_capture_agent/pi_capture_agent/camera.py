@@ -9,6 +9,8 @@ import logging
 from typing import Optional, Tuple
 import numpy as np
 
+from pi_capture_agent.jpeg import FastJpegEncoder
+
 logger = logging.getLogger("pi_capture_agent.camera")
 
 
@@ -25,6 +27,7 @@ class CameraDriver:
         mock_mode: bool = False,
         vflip: bool = True,
         rotate_180: bool = False,
+        use_hardware_flip: bool = True,
     ):
         self.device = device
         self.width = width
@@ -34,6 +37,8 @@ class CameraDriver:
         self.mock_mode = mock_mode
         self.vflip = vflip
         self.rotate_180 = rotate_180
+        self.use_hardware_flip = use_hardware_flip
+        self._hw_vflip_applied = False
         self._cap = None
         self._is_opened = False
         self._frame_count = 0
@@ -65,6 +70,39 @@ class CameraDriver:
                     break
             except Exception as e:
                 logger.debug("media-ctl negotiation notice: %s", e)
+
+    def _apply_hardware_flip(self) -> bool:
+        """Configures vertical flip directly on OV5640 sensor hardware via V4L2 controls."""
+        if not self.vflip or not self.use_hardware_flip or self.mock_mode:
+            self._hw_vflip_applied = False
+            return False
+
+        import glob
+        import subprocess
+
+        # Target subdevices and camera video node
+        targets = sorted(glob.glob("/dev/v4l-subdev*"))
+        if self.device not in targets:
+            targets.append(self.device)
+
+        for dev_path in targets:
+            try:
+                res = subprocess.run(
+                    ["v4l2-ctl", "-d", str(dev_path), "--set-ctrl=vertical_flip=1"],
+                    capture_output=True,
+                    text=True,
+                    timeout=1,
+                )
+                if res.returncode == 0:
+                    logger.info("Hardware vertical flip enabled successfully on %s", dev_path)
+                    self._hw_vflip_applied = True
+                    return True
+            except Exception as e:
+                logger.debug("Hardware flip attempt on %s failed: %s", dev_path, e)
+
+        logger.info("V4L2 hardware flip not supported on current device; using software flip fallback.")
+        self._hw_vflip_applied = False
+        return False
 
     def open(self) -> bool:
         """Opens camera device and sets resolution and codec."""
@@ -118,6 +156,9 @@ class CameraDriver:
             # Set buffer size to 1 to eliminate frame latency
             if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
                 self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1.0)
+
+            # Attempt to apply hardware vertical flip on OV5640 sensor
+            self._apply_hardware_flip()
 
             # Warm-up frames: Unicam CSI receiver needs a few frames to settle DMA buffer
             for _ in range(3):
@@ -184,9 +225,8 @@ class CameraDriver:
             2,
         )
 
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-        _, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
-        return ts_ns, frame, jpeg_buf.tobytes()
+        jpeg_bytes = FastJpegEncoder.encode(frame, quality=80) or b""
+        return ts_ns, frame, jpeg_bytes
 
     def read_raw(self) -> Tuple[int, Optional[np.ndarray]]:
         """Reads a single decoded BGR frame from the camera without JPEG compression.
@@ -215,8 +255,9 @@ class CameraDriver:
                 self.is_synthetic_active = False
 
         if frame is not None:
-            # Apply orientation correction: vflip corrects inverted OV5640 sensor array
-            if self.vflip:
+            # Apply orientation correction:
+            # Only perform software CPU flip if hardware flip was not applied on sensor
+            if self.vflip and not self._hw_vflip_applied:
                 frame = cv2.flip(frame, 0)
             if self.rotate_180:
                 frame = cv2.flip(frame, -1)
@@ -226,14 +267,14 @@ class CameraDriver:
     def read_frame(
         self,
         encode_jpeg: bool = True,
-        jpeg_quality: int = 75,
+        jpeg_quality: int = 70,
         resize_to: Optional[Tuple[int, int]] = None,
     ) -> Tuple[int, Optional[np.ndarray], Optional[bytes]]:
         """Reads a single frame from the camera, with optional resize and JPEG compression.
 
         Args:
             encode_jpeg: Whether to compress to JPEG.
-            jpeg_quality: JPEG compression quality (1-100, default: 75).
+            jpeg_quality: JPEG compression quality (1-100, default: 70).
             resize_to: Optional (width, height) tuple to downscale frame before encoding.
 
         Returns:
@@ -253,9 +294,7 @@ class CameraDriver:
 
         jpeg_bytes: Optional[bytes] = None
         if encode_jpeg:
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
-            success, jpeg_buf = cv2.imencode(".jpg", frame, encode_param)
-            jpeg_bytes = jpeg_buf.tobytes() if success else None
+            jpeg_bytes = FastJpegEncoder.encode(frame, quality=jpeg_quality)
 
         return ts_ns, frame, jpeg_bytes
 

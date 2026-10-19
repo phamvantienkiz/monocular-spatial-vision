@@ -488,6 +488,8 @@ def run_stream(
     pixel_format: str = "UYVY",
     vflip: bool = True,
     rotate_180: bool = False,
+    jpeg_quality: int = 70,
+    use_hardware_flip: bool = True,
 ) -> None:
     """Continuous production streaming loop to remote Ingest Server."""
     running = True
@@ -509,6 +511,7 @@ def run_stream(
         pixel_format=pixel_format,
         vflip=vflip,
         rotate_180=rotate_180,
+        use_hardware_flip=use_hardware_flip,
     )
     if not cam.open():
         logger.error("Could not open camera device %s", device)
@@ -518,7 +521,7 @@ def run_stream(
     imu.initialize()
 
     streamer = SocketStreamer(host=host, port=port)
-    logger.info("Starting binary streaming loop -> %s:%d (Target FPS: %d)", host, port, fps)
+    logger.info("Starting binary streaming loop -> %s:%d (Target FPS: %d, Quality: %d)", host, port, fps, jpeg_quality)
 
     frame_id = 0
     start_time = time.time()
@@ -536,7 +539,7 @@ def run_stream(
             pitch, roll, _ = imu.read_attitude()
 
             # Read frame
-            ts_ns, _, jpeg_bytes = cam.read_frame()
+            ts_ns, _, jpeg_bytes = cam.read_frame(jpeg_quality=jpeg_quality)
             if jpeg_bytes is None:
                 dropped_count += 1
                 continue
@@ -588,16 +591,104 @@ def run_stream(
         logger.info("Streaming agent terminated cleanly.")
 
 
+def run_test_perf(
+    device: str,
+    width: int,
+    height: int,
+    frames: int = 100,
+    pixel_format: str = "UYVY",
+    vflip: bool = True,
+    rotate_180: bool = False,
+    jpeg_quality: int = 70,
+    use_hardware_flip: bool = True,
+) -> None:
+    """Measures pipeline component timings and throughput without network transmission."""
+    from pi_capture_agent.jpeg import FastJpegEncoder
+
+    print("=" * 68)
+    print(f"  PI CAPTURE AGENT — PERFORMANCE BENCHMARK ({frames} FRAMES)")
+    print("=" * 68)
+
+    cam = CameraDriver(
+        device=device,
+        width=width,
+        height=height,
+        fps=30,
+        pixel_format=pixel_format,
+        vflip=vflip,
+        rotate_180=rotate_180,
+        use_hardware_flip=use_hardware_flip,
+    )
+    if not cam.open():
+        logger.error("Could not open camera device %s", device)
+        sys.exit(1)
+
+    backend_desc = "PyTurboJPEG (ARM NEON SIMD)" if FastJpegEncoder.is_neon_accelerated() else "OpenCV imencode (Scalar fallback)"
+    flip_desc = "ACTIVE (Sensor OV5640 hardware)" if cam._hw_vflip_applied else "INACTIVE (Software CPU fallback)"
+
+    print(f"  Camera Device:       {device} ({width}x{height}, fmt={pixel_format})")
+    print(f"  Hardware Flip:       {flip_desc}")
+    print(f"  JPEG Backend:        {backend_desc}")
+    print(f"  JPEG Quality:        {jpeg_quality}")
+    print("  Running warmup frames...")
+
+    for _ in range(3):
+        cam.read_frame(jpeg_quality=jpeg_quality)
+
+    print(f"  Benchmarking {frames} frames...")
+    t_grab_list = []
+    t_encode_list = []
+    t_total_list = []
+    payload_sizes = []
+
+    t_bench_start = time.time()
+    for _ in range(frames):
+        t0 = time.time()
+        ts_ns, raw_frame = cam.read_raw()
+        t1 = time.time()
+        jpeg_bytes = FastJpegEncoder.encode(raw_frame, quality=jpeg_quality) if raw_frame is not None else None
+        t2 = time.time()
+
+        t_grab_list.append((t1 - t0) * 1000)
+        t_encode_list.append((t2 - t1) * 1000)
+        t_total_list.append((t2 - t0) * 1000)
+        if jpeg_bytes:
+            payload_sizes.append(len(jpeg_bytes))
+
+    t_bench_total = time.time() - t_bench_start
+    cam.release()
+
+    avg_grab = sum(t_grab_list) / len(t_grab_list) if t_grab_list else 0
+    avg_encode = sum(t_encode_list) / len(t_encode_list) if t_encode_list else 0
+    avg_total = sum(t_total_list) / len(t_total_list) if t_total_list else 0
+    avg_size_kb = (sum(payload_sizes) / len(payload_sizes)) / 1024 if payload_sizes else 0
+    measured_fps = frames / t_bench_total if t_bench_total > 0 else 0
+
+    print("-" * 68)
+    print(f"  Avg Raw Grab Time:     {avg_grab:6.2f} ms")
+    print(f"  Avg Encode Time:       {avg_encode:6.2f} ms")
+    print(f"  Avg Total Cycle Time:  {avg_total:6.2f} ms")
+    print(f"  Avg JPEG Payload Size: {avg_size_kb:6.1f} KB")
+    print(f"  Effective Throughput:  {measured_fps:6.1f} FPS")
+    print("=" * 68)
+    if measured_fps >= 25:
+        print("  RESULT: [EXCELLENT] Target >= 25 FPS achieved successfully!")
+    else:
+        print("  RESULT: [NOTICE] Below 25 FPS target; verify hardware acceleration.")
+    print("=" * 68 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Raspberry Pi 3 Pcam 5C & IMU Capture Agent")
     parser.add_argument(
         "--mode",
-        choices=["diag", "snapshot", "test-imu", "preview", "stream"],
+        choices=["diag", "snapshot", "test-imu", "preview", "stream", "test-perf"],
         default="stream",
         help="Operating mode (default: stream)",
     )
     parser.add_argument("--config", default="configs/capture_pi.yaml", help="Path to config YAML")
     parser.add_argument("--output", default="data/test_frame.jpg", help="Path to save test image (snapshot mode)")
+    parser.add_argument("--frames", type=int, default=100, help="Number of frames for test-perf benchmark")
     parser.add_argument("--host", default=None, help="Target ingest host IP (overrides config)")
     parser.add_argument("--port", type=int, default=None, help="Target ingest port (overrides config)")
     parser.add_argument("--preview-port", type=int, default=8080, help="Port for diagnostic preview server")
@@ -605,6 +696,8 @@ def main() -> None:
     parser.add_argument("--pixel-format", default=None, help="Camera pixel format (UYVY, YUYV, MJPG)")
     parser.add_argument("--vflip", action=argparse.BooleanOptionalAction, default=None, help="Enable or disable vertical flip")
     parser.add_argument("--rotate-180", action="store_true", default=None, help="Rotate frames 180 degrees")
+    parser.add_argument("--use-hardware-flip", action=argparse.BooleanOptionalAction, default=None, help="Enable OV5640 hardware vertical flip")
+    parser.add_argument("--jpeg-quality", type=int, default=None, help="JPEG compression quality (1-100, default: 70)")
     parser.add_argument("--preview-width", type=int, default=None, help="Preview downscale width")
     parser.add_argument("--preview-height", type=int, default=None, help="Preview downscale height")
     parser.add_argument("--preview-quality", type=int, default=None, help="Preview JPEG compression quality (1-100)")
@@ -628,8 +721,9 @@ def main() -> None:
     preview_height = args.preview_height or dev_cfg.get("preview_height", 360)
     preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 65)
 
-    i2c_bus = imu_cfg.get("i2c_bus", 1)
-    i2c_addr = imu_cfg.get("i2c_address", 0x68)
+    opt_cfg = cfg.get("optimization", {})
+    use_hw_flip = args.use_hardware_flip if args.use_hardware_flip is not None else opt_cfg.get("use_hardware_flip", True)
+    jpeg_quality = args.jpeg_quality or opt_cfg.get("jpeg_quality") or stream_cfg.get("jpeg_quality", 70)
 
     host = args.host or stream_cfg.get("target_host", "127.0.0.1")
     port = args.port or stream_cfg.get("target_port", 9876)
@@ -676,6 +770,18 @@ def main() -> None:
             preview_height=preview_height,
             preview_quality=preview_quality,
         )
+    elif args.mode == "test-perf":
+        run_test_perf(
+            device=device,
+            width=width,
+            height=height,
+            frames=args.frames,
+            pixel_format=pixel_format,
+            vflip=vflip,
+            rotate_180=rotate_180,
+            jpeg_quality=jpeg_quality,
+            use_hardware_flip=use_hw_flip,
+        )
     elif args.mode == "stream":
         run_stream(
             device=device,
@@ -689,6 +795,8 @@ def main() -> None:
             pixel_format=pixel_format,
             vflip=vflip,
             rotate_180=rotate_180,
+            jpeg_quality=jpeg_quality,
+            use_hardware_flip=use_hw_flip,
         )
     else:
         logger.error("Unknown mode: %s", args.mode)

@@ -9,9 +9,15 @@ device:
   pixel_format: "UYVY"  # Options: UYVY (native for Pcam 5C), YUYV, MJPG
   vflip: true           # Vertical flip for OV5640 BSI sensor array
   rotate_180: false     # Hardware logo/text is upright, only vertical flip needed
+  use_hardware_flip: true # Enable on-chip OV5640 hardware vertical flip
   preview_width: 640    # Preview downscale width for smooth Wi-Fi stream
   preview_height: 360   # Preview downscale height (16:9 nHD)
   preview_quality: 65   # Fast JPEG quality for Wi-Fi streaming
+
+optimization:
+  use_hardware_flip: true
+  jpeg_backend: "turbojpeg"  # Prioritize PyTurboJPEG (ARM NEON) with OpenCV fallback
+  jpeg_quality: 70           # Optimal balance between visual fidelity and stream latency
 
 imu:
   i2c_bus: 1
@@ -22,5 +28,6 @@ stream:
   # Target IP address (Developer Laptop during Phase 3, or Jetson AGX during Phase 5)
   target_host: "192.168.1.20"
   target_port: 9876
+  jpeg_quality: 70
   reconnect_delay_sec: 2.0
   max_reconnect_attempts: -1  # -1 = infinite retry
