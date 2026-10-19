@@ -225,9 +225,9 @@ def run_preview_server(
     pixel_format: str = "UYVY",
     vflip: bool = True,
     rotate_180: bool = False,
-    preview_width: int = 1280,
-    preview_height: int = 720,
-    preview_quality: int = 60,
+    preview_width: int = 640,
+    preview_height: int = 360,
+    preview_quality: int = 65,
     use_hardware_flip: bool = True,
 ) -> None:
     """Runs a high-performance diagnostic HTTP preview server serving live frames and telemetry to laptop."""
@@ -250,21 +250,7 @@ def run_preview_server(
     imu = IMUReader(bus_id=i2c_bus, address=i2c_addr)
     imu.initialize()
 
-    # Shared thread-safe state between Camera Grabber and Encoder Workers
-    latest_capture = {
-        "frame": None,
-        "pitch": 0.0,
-        "roll": 0.0,
-        "ax": 0.0,
-        "ay": 0.0,
-        "az": 0.0,
-        "grab_id": 0,
-        "assigned_id": 0,
-    }
-    grab_lock = threading.Lock()
-    new_frame_event = threading.Event()
-
-    # Shared thread-safe state for HTTP MJPEG Streaming
+    # Shared thread-safe state for streaming
     state = {
         "jpeg": None,
         "pitch": 0.0,
@@ -277,100 +263,64 @@ def run_preview_server(
     }
     condition = threading.Condition()
     stop_event = threading.Event()
-    published_timestamps = []
 
-    def camera_grabber_worker():
-        """Dedicated high-priority loop constantly draining V4L2 buffers at full 30 FPS.
-        Zero wait, zero sleep, eliminating V4L2 queue buildup and stream latency."""
-        grab_count = 0
+    def capture_worker():
+        """Background thread acquiring frames and attitude at full sensor throughput."""
+        frame_timestamps = []
+        frame_count = 0
+        target_size = (preview_width, preview_height)
+
         while not stop_event.is_set():
             try:
+                # DRAIN camera buffer directly at sensor native rate without sleep
                 ts_ns, frame = cam.read_raw()
                 if frame is None:
-                    time.sleep(0.005)
+                    time.sleep(0.01)
                     continue
 
+                now = time.time()
+                frame_timestamps.append(now)
+                if len(frame_timestamps) > 20:
+                    frame_timestamps.pop(0)
+                if len(frame_timestamps) >= 2:
+                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
+                else:
+                    current_fps = 0.0
+
+                frame_count += 1
+
+                # Read IMU attitude
                 pitch, roll, (ax, ay, az) = imu.read_attitude()
-                grab_count += 1
 
-                with grab_lock:
-                    latest_capture["frame"] = frame
-                    latest_capture["pitch"] = pitch
-                    latest_capture["roll"] = roll
-                    latest_capture["ax"] = ax
-                    latest_capture["ay"] = ay
-                    latest_capture["az"] = az
-                    latest_capture["grab_id"] = grab_count
-                    new_frame_event.set()
+                # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
+                if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
+                    preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_LINEAR)
+                else:
+                    preview_frame = frame
 
-                # Throttle only in synthetic mock mode to prevent 100% CPU spin
-                if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
-                    time.sleep(1.0 / max(cam.fps, 1))
-            except Exception as e:
-                logger.error("Error in camera_grabber_worker: %s", e)
-                time.sleep(0.02)
+                jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
 
-    def encoder_worker():
-        """Worker thread encoding the freshest available frame with PyTurboJPEG."""
-        target_size = (preview_width, preview_height)
-        while not stop_event.is_set():
-            new_frame_event.wait(timeout=0.05)
-            if stop_event.is_set():
-                break
-
-            with grab_lock:
-                gid = latest_capture["grab_id"]
-                if gid <= latest_capture["assigned_id"]:
-                    new_frame_event.clear()
-                    continue
-                latest_capture["assigned_id"] = gid
-                frame = latest_capture["frame"]
-                pitch = latest_capture["pitch"]
-                roll = latest_capture["roll"]
-                ax = latest_capture["ax"]
-                ay = latest_capture["ay"]
-                az = latest_capture["az"]
-
-            if frame is None:
-                continue
-
-            # Scale only if preview dimensions differ from frame dimensions
-            if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
-                preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_NEAREST)
-            else:
-                preview_frame = frame
-
-            jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
-            if jpeg_bytes is not None:
-                with condition:
-                    # Enforce strict monotonically increasing frame publishing
-                    if gid > state["frame_id"]:
-                        now = time.time()
-                        published_timestamps.append(now)
-                        if len(published_timestamps) > 20:
-                            published_timestamps.pop(0)
-                        if len(published_timestamps) >= 2:
-                            live_fps = (len(published_timestamps) - 1) / (published_timestamps[-1] - published_timestamps[0])
-                        else:
-                            live_fps = 0.0
-
+                if jpeg_bytes is not None:
+                    with condition:
                         state["jpeg"] = jpeg_bytes
                         state["pitch"] = pitch
                         state["roll"] = roll
                         state["ax"] = ax
                         state["ay"] = ay
                         state["az"] = az
-                        state["fps"] = live_fps
-                        state["frame_id"] = gid
+                        state["fps"] = current_fps
+                        state["frame_id"] = frame_count
                         condition.notify_all()
 
-    # Launch dedicated camera grabber and dual parallel encoder workers (utilizing multi-core CPU)
-    grabber_t = threading.Thread(target=camera_grabber_worker, daemon=True)
-    encoder_t1 = threading.Thread(target=encoder_worker, daemon=True)
-    encoder_t2 = threading.Thread(target=encoder_worker, daemon=True)
-    threads = [grabber_t, encoder_t1, encoder_t2]
-    for t in threads:
-        t.start()
+                # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
+                if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
+                    time.sleep(1.0 / max(cam.fps, 1))
+            except Exception as e:
+                logger.error("Error in capture_worker: %s", e, exc_info=True)
+                time.sleep(0.05)
+
+    worker_thread = threading.Thread(target=capture_worker, daemon=True)
+    worker_thread.start()
 
     class PreviewHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -415,7 +365,7 @@ def run_preview_server(
         </div>
         <div class="stats-grid">
             <div class="stat-box">
-                <div class="stat-label">Pi / Laptop FPS</div>
+                <div class="stat-label">Capture FPS</div>
                 <div class="stat-value fps-val" id="fps-txt">-- FPS</div>
             </div>
             <div class="stat-box">
@@ -430,20 +380,6 @@ def run_preview_server(
     </div>
     <script>
         const img = document.getElementById('live-img');
-        let renderCount = 0;
-        let lastRenderTime = performance.now();
-        let displayFps = 0.0;
-
-        img.onload = () => {
-            renderCount++;
-            const now = performance.now();
-            if (now - lastRenderTime >= 1000) {
-                displayFps = (renderCount * 1000) / (now - lastRenderTime);
-                renderCount = 0;
-                lastRenderTime = now;
-            }
-        };
-
         img.onerror = () => {
             setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
         };
@@ -452,13 +388,12 @@ def run_preview_server(
             fetch('/telemetry')
                 .then(r => r.json())
                 .then(d => {
-                    const disp = displayFps > 0 ? displayFps.toFixed(1) : d.fps.toFixed(1);
-                    document.getElementById('fps-txt').innerText = `${d.fps.toFixed(1)} / ${disp} FPS`;
+                    document.getElementById('fps-txt').innerText = `${d.fps.toFixed(1)} FPS`;
                     document.getElementById('att-txt').innerText = (d.pitch >= 0 ? '+' : '') + d.pitch.toFixed(1) + '° / ' + (d.roll >= 0 ? '+' : '') + d.roll.toFixed(1) + '°';
                     document.getElementById('accel-txt').innerText = `${d.ax.toFixed(2)}, ${d.ay.toFixed(2)}, ${d.az.toFixed(2)}g`;
                 })
                 .catch(() => {});
-        }, 200);
+        }, 150);
     </script>
 </body>
 </html>"""
@@ -558,12 +493,10 @@ def run_preview_server(
         logger.info("Shutting down preview server...")
     finally:
         stop_event.set()
-        new_frame_event.set()
         with condition:
             condition.notify_all()
         server.server_close()
-        for t in threads:
-            t.join(timeout=0.5)
+        worker_thread.join(timeout=1.0)
         cam.release()
         imu.close()
 
@@ -916,9 +849,9 @@ def main() -> None:
     pixel_format = args.pixel_format or dev_cfg.get("pixel_format", "UYVY")
     vflip = args.vflip if args.vflip is not None else dev_cfg.get("vflip", True)
     rotate_180 = args.rotate_180 if args.rotate_180 is not None else dev_cfg.get("rotate_180", False)
-    preview_width = args.preview_width or dev_cfg.get("preview_width", 1280)
-    preview_height = args.preview_height or dev_cfg.get("preview_height", 720)
-    preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 60)
+    preview_width = args.preview_width or dev_cfg.get("preview_width", 640)
+    preview_height = args.preview_height or dev_cfg.get("preview_height", 360)
+    preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 65)
 
     i2c_bus = imu_cfg.get("i2c_bus", 1)
     i2c_addr = imu_cfg.get("i2c_address", 0x68)
