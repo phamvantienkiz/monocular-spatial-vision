@@ -271,49 +271,53 @@ def run_preview_server(
         target_size = (preview_width, preview_height)
 
         while not stop_event.is_set():
-            # DRAIN camera buffer directly at sensor native rate without sleep
-            ts_ns, frame = cam.read_raw()
-            if frame is None:
-                time.sleep(0.01)
-                continue
+            try:
+                # DRAIN camera buffer directly at sensor native rate without sleep
+                ts_ns, frame = cam.read_raw()
+                if frame is None:
+                    time.sleep(0.01)
+                    continue
 
-            now = time.time()
-            frame_timestamps.append(now)
-            if len(frame_timestamps) > 20:
-                frame_timestamps.pop(0)
-            if len(frame_timestamps) >= 2:
-                current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
-            else:
-                current_fps = 0.0
+                now = time.time()
+                frame_timestamps.append(now)
+                if len(frame_timestamps) > 20:
+                    frame_timestamps.pop(0)
+                if len(frame_timestamps) >= 2:
+                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
+                else:
+                    current_fps = 0.0
 
-            frame_count += 1
+                frame_count += 1
 
-            # Read IMU attitude
-            pitch, roll, (ax, ay, az) = imu.read_attitude()
+                # Read IMU attitude
+                pitch, roll, (ax, ay, az) = imu.read_attitude()
 
-            # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
-            if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
-                preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_LINEAR)
-            else:
-                preview_frame = frame
+                # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
+                if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
+                    preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_LINEAR)
+                else:
+                    preview_frame = frame
 
-            jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
+                jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
 
-            if jpeg_bytes is not None:
-                with condition:
-                    state["jpeg"] = jpeg_bytes
-                    state["pitch"] = pitch
-                    state["roll"] = roll
-                    state["ax"] = ax
-                    state["ay"] = ay
-                    state["az"] = az
-                    state["fps"] = current_fps
-                    state["frame_id"] = frame_count
-                    condition.notify_all()
+                if jpeg_bytes is not None:
+                    with condition:
+                        state["jpeg"] = jpeg_bytes
+                        state["pitch"] = pitch
+                        state["roll"] = roll
+                        state["ax"] = ax
+                        state["ay"] = ay
+                        state["az"] = az
+                        state["fps"] = current_fps
+                        state["frame_id"] = frame_count
+                        condition.notify_all()
 
-            # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
-            if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
-                time.sleep(1.0 / max(cam.fps, 1))
+                # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
+                if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
+                    time.sleep(1.0 / max(cam.fps, 1))
+            except Exception as e:
+                logger.error("Error in capture_worker: %s", e, exc_info=True)
+                time.sleep(0.05)
 
     worker_thread = threading.Thread(target=capture_worker, daemon=True)
     worker_thread.start()
@@ -323,7 +327,7 @@ def run_preview_server(
             pass  # Suppress HTTP access noise
 
         def do_GET(self):
-            if self.path in ("/", "/preview"):
+            if self.path in ("/", "/preview", "/preview/"):
                 html = """<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -376,9 +380,18 @@ def run_preview_server(
     </div>
     <script>
         const img = document.getElementById('live-img');
+        let useSnapshot = false;
         img.onerror = () => {
-            setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
+            if (!useSnapshot) {
+                useSnapshot = true;
+                pollSnapshot();
+            }
         };
+        function pollSnapshot() {
+            if (!useSnapshot) return;
+            img.src = '/snapshot.jpg?t=' + Date.now();
+            setTimeout(pollSnapshot, 66);
+        }
         setInterval(() => {
             fetch('/telemetry')
                 .then(r => r.json())
@@ -403,7 +416,7 @@ def run_preview_server(
             elif self.path.startswith("/stream.mjpg"):
                 try:
                     self.send_response(200)
-                    self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=FRAME")
+                    self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
                     self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                     self.send_header("Pragma", "no-cache")
                     self.send_header("Expires", "0")
@@ -424,7 +437,7 @@ def run_preview_server(
                             continue
 
                         header = (
-                            b"--FRAME\r\n"
+                            b"--frame\r\n"
                             b"Content-Type: image/jpeg\r\n"
                             b"Content-Length: " + str(len(jpeg_bytes)).encode("ascii") + b"\r\n\r\n"
                         )
@@ -474,7 +487,11 @@ def run_preview_server(
                 self.send_response(404)
                 self.end_headers()
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), PreviewHandler)
+    class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    server = ReusableThreadingHTTPServer(("0.0.0.0", port), PreviewHandler)
     logger.info("Diagnostic Preview Server listening on http://0.0.0.0:%d (Press Ctrl+C to stop)", port)
     logger.info("Open http://<pi_ip>:%d/ in your laptop browser to view camera feed.", port)
 
