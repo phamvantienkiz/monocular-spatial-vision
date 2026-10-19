@@ -250,7 +250,21 @@ def run_preview_server(
     imu = IMUReader(bus_id=i2c_bus, address=i2c_addr)
     imu.initialize()
 
-    # Shared thread-safe state for streaming
+    # Shared thread-safe state between Camera Grabber and Encoder Workers
+    latest_capture = {
+        "frame": None,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "ax": 0.0,
+        "ay": 0.0,
+        "az": 0.0,
+        "grab_id": 0,
+        "assigned_id": 0,
+    }
+    grab_lock = threading.Lock()
+    new_frame_event = threading.Event()
+
+    # Shared thread-safe state for HTTP MJPEG Streaming
     state = {
         "jpeg": None,
         "pitch": 0.0,
@@ -263,64 +277,100 @@ def run_preview_server(
     }
     condition = threading.Condition()
     stop_event = threading.Event()
+    published_timestamps = []
 
-    def capture_worker():
-        """Background thread acquiring frames and attitude at full sensor throughput."""
-        frame_timestamps = []
-        frame_count = 0
-        target_size = (preview_width, preview_height)
-
+    def camera_grabber_worker():
+        """Dedicated high-priority loop constantly draining V4L2 buffers at full 30 FPS.
+        Zero wait, zero sleep, eliminating V4L2 queue buildup and stream latency."""
+        grab_count = 0
         while not stop_event.is_set():
             try:
-                # DRAIN camera buffer directly at sensor native rate without sleep
                 ts_ns, frame = cam.read_raw()
                 if frame is None:
-                    time.sleep(0.01)
+                    time.sleep(0.005)
                     continue
 
-                now = time.time()
-                frame_timestamps.append(now)
-                if len(frame_timestamps) > 20:
-                    frame_timestamps.pop(0)
-                if len(frame_timestamps) >= 2:
-                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
-                else:
-                    current_fps = 0.0
-
-                frame_count += 1
-
-                # Read IMU attitude
                 pitch, roll, (ax, ay, az) = imu.read_attitude()
+                grab_count += 1
 
-                # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
-                if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
-                    preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_LINEAR)
-                else:
-                    preview_frame = frame
+                with grab_lock:
+                    latest_capture["frame"] = frame
+                    latest_capture["pitch"] = pitch
+                    latest_capture["roll"] = roll
+                    latest_capture["ax"] = ax
+                    latest_capture["ay"] = ay
+                    latest_capture["az"] = az
+                    latest_capture["grab_id"] = grab_count
+                    new_frame_event.set()
 
-                jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
+                # Throttle only in synthetic mock mode to prevent 100% CPU spin
+                if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
+                    time.sleep(1.0 / max(cam.fps, 1))
+            except Exception as e:
+                logger.error("Error in camera_grabber_worker: %s", e)
+                time.sleep(0.02)
 
-                if jpeg_bytes is not None:
-                    with condition:
+    def encoder_worker():
+        """Worker thread encoding the freshest available frame with PyTurboJPEG."""
+        target_size = (preview_width, preview_height)
+        while not stop_event.is_set():
+            new_frame_event.wait(timeout=0.05)
+            if stop_event.is_set():
+                break
+
+            with grab_lock:
+                gid = latest_capture["grab_id"]
+                if gid <= latest_capture["assigned_id"]:
+                    new_frame_event.clear()
+                    continue
+                latest_capture["assigned_id"] = gid
+                frame = latest_capture["frame"]
+                pitch = latest_capture["pitch"]
+                roll = latest_capture["roll"]
+                ax = latest_capture["ax"]
+                ay = latest_capture["ay"]
+                az = latest_capture["az"]
+
+            if frame is None:
+                continue
+
+            # Scale only if preview dimensions differ from frame dimensions
+            if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
+                preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_NEAREST)
+            else:
+                preview_frame = frame
+
+            jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
+            if jpeg_bytes is not None:
+                with condition:
+                    # Enforce strict monotonically increasing frame publishing
+                    if gid > state["frame_id"]:
+                        now = time.time()
+                        published_timestamps.append(now)
+                        if len(published_timestamps) > 20:
+                            published_timestamps.pop(0)
+                        if len(published_timestamps) >= 2:
+                            live_fps = (len(published_timestamps) - 1) / (published_timestamps[-1] - published_timestamps[0])
+                        else:
+                            live_fps = 0.0
+
                         state["jpeg"] = jpeg_bytes
                         state["pitch"] = pitch
                         state["roll"] = roll
                         state["ax"] = ax
                         state["ay"] = ay
                         state["az"] = az
-                        state["fps"] = current_fps
-                        state["frame_id"] = frame_count
+                        state["fps"] = live_fps
+                        state["frame_id"] = gid
                         condition.notify_all()
 
-                # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
-                if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
-                    time.sleep(1.0 / max(cam.fps, 1))
-            except Exception as e:
-                logger.error("Error in capture_worker: %s", e, exc_info=True)
-                time.sleep(0.05)
-
-    worker_thread = threading.Thread(target=capture_worker, daemon=True)
-    worker_thread.start()
+    # Launch dedicated camera grabber and dual parallel encoder workers (utilizing multi-core CPU)
+    grabber_t = threading.Thread(target=camera_grabber_worker, daemon=True)
+    encoder_t1 = threading.Thread(target=encoder_worker, daemon=True)
+    encoder_t2 = threading.Thread(target=encoder_worker, daemon=True)
+    threads = [grabber_t, encoder_t1, encoder_t2]
+    for t in threads:
+        t.start()
 
     class PreviewHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -508,10 +558,12 @@ def run_preview_server(
         logger.info("Shutting down preview server...")
     finally:
         stop_event.set()
+        new_frame_event.set()
         with condition:
             condition.notify_all()
         server.server_close()
-        worker_thread.join(timeout=1.0)
+        for t in threads:
+            t.join(timeout=0.5)
         cam.release()
         imu.close()
 
