@@ -30,13 +30,28 @@ logger = logging.getLogger("pi_capture_agent")
 
 
 def load_config(config_path: str) -> dict:
-    """Loads YAML configuration file if present."""
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.warning("Could not parse config file %s: %s. Using defaults.", config_path, e)
+    """Loads YAML configuration file with intelligent path resolution across working directories."""
+    from pathlib import Path
+
+    candidates = [
+        Path(config_path),
+        Path("..") / config_path,
+        Path("..") / ".." / config_path,
+        Path(__file__).resolve().parents[3] / config_path,
+        Path(__file__).resolve().parents[2] / config_path,
+    ]
+
+    for p in candidates:
+        if p.is_file():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    logger.info("Loaded configuration from: %s", p.resolve())
+                    return cfg
+            except Exception as e:
+                logger.warning("Could not parse config file %s: %s", p, e)
+
+    logger.warning("Config file %s not found in search paths. Using defaults.", config_path)
     return {}
 
 
@@ -213,9 +228,11 @@ def run_preview_server(
     preview_width: int = 640,
     preview_height: int = 360,
     preview_quality: int = 65,
+    use_hardware_flip: bool = True,
 ) -> None:
     """Runs a high-performance diagnostic HTTP preview server serving live frames and telemetry to laptop."""
     import cv2
+    from pi_capture_agent.jpeg import FastJpegEncoder
 
     cam = CameraDriver(
         device=device,
@@ -224,6 +241,7 @@ def run_preview_server(
         pixel_format=pixel_format,
         vflip=vflip,
         rotate_180=rotate_180,
+        use_hardware_flip=use_hardware_flip,
     )
     if not cam.open():
         logger.error("Could not open camera device %s for preview", device)
@@ -251,7 +269,6 @@ def run_preview_server(
         frame_timestamps = []
         frame_count = 0
         target_size = (preview_width, preview_height)
-        jpeg_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(preview_quality)]
 
         while not stop_event.is_set():
             # DRAIN camera buffer directly at sensor native rate without sleep
@@ -280,8 +297,7 @@ def run_preview_server(
             else:
                 preview_frame = frame
 
-            success, jpeg_buf = cv2.imencode(".jpg", preview_frame, jpeg_param)
-            jpeg_bytes = jpeg_buf.tobytes() if success else None
+            jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
 
             if jpeg_bytes is not None:
                 with condition:
@@ -731,6 +747,13 @@ def main() -> None:
     host = args.host or stream_cfg.get("target_host", "127.0.0.1")
     port = args.port or stream_cfg.get("target_port", 9876)
 
+    if args.mode == "stream" and host in ("127.0.0.1", "localhost"):
+        logger.warning(
+            "Stream target is set to %s (Pi 3 localhost). If sending to Laptop, "
+            "provide --host <IP_LAPTOP> or update 'target_host' in configs/capture_pi.yaml.",
+            host,
+        )
+
     logger.info("Selected mode: %s", args.mode)
 
     if args.mode == "diag":
@@ -772,6 +795,7 @@ def main() -> None:
             preview_width=preview_width,
             preview_height=preview_height,
             preview_quality=preview_quality,
+            use_hardware_flip=use_hw_flip,
         )
     elif args.mode == "test-perf":
         run_test_perf(
