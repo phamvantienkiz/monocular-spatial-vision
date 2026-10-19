@@ -250,19 +250,6 @@ def run_preview_server(
     imu = IMUReader(bus_id=i2c_bus, address=i2c_addr)
     imu.initialize()
 
-    # Shared thread-safe state between Grabber and Encoder
-    raw_state = {
-        "ts_ns": 0,
-        "frame": None,
-        "pitch": 0.0,
-        "roll": 0.0,
-        "ax": 0.0,
-        "ay": 0.0,
-        "az": 0.0,
-        "grab_id": 0,
-    }
-    capture_cond = threading.Condition()
-
     # Shared thread-safe state for streaming
     state = {
         "jpeg": None,
@@ -274,105 +261,73 @@ def run_preview_server(
         "fps": 0.0,
         "frame_id": 0,
     }
-    state_cond = threading.Condition()
+    condition = threading.Condition()
     stop_event = threading.Event()
 
-    def camera_grabber_worker():
-        """Dedicated high-priority loop constantly draining V4L2 buffers at full 30 FPS.
-        Zero sleep, zero wait, completely eliminating V4L2 driver buffer queue buildup."""
-        grab_count = 0
+    def capture_worker():
+        """Background thread acquiring frames and attitude at full sensor throughput."""
+        frame_timestamps = []
+        frame_count = 0
+        target_size = (preview_width, preview_height)
+
         while not stop_event.is_set():
             try:
+                # DRAIN camera buffer directly at sensor native rate without sleep
                 ts_ns, frame = cam.read_raw()
                 if frame is None:
-                    time.sleep(0.005)
+                    time.sleep(0.01)
                     continue
 
-                pitch, roll, (ax, ay, az) = imu.read_attitude()
-                grab_count += 1
+                now = time.time()
+                frame_timestamps.append(now)
+                if len(frame_timestamps) > 20:
+                    frame_timestamps.pop(0)
+                if len(frame_timestamps) >= 2:
+                    current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
+                else:
+                    current_fps = 0.0
 
-                with capture_cond:
-                    raw_state["ts_ns"] = ts_ns
-                    raw_state["frame"] = frame
-                    raw_state["pitch"] = pitch
-                    raw_state["roll"] = roll
-                    raw_state["ax"] = ax
-                    raw_state["ay"] = ay
-                    raw_state["az"] = az
-                    raw_state["grab_id"] = grab_count
-                    capture_cond.notify()
+                frame_count += 1
+
+                # Read IMU attitude
+                pitch, roll, (ax, ay, az) = imu.read_attitude()
+
+                # Downscale for preview (e.g. 640x360) and encode JPEG at preview_quality (e.g. 65)
+                # Fast downscale: INTER_NEAREST takes ~2ms on ARM Cortex-A53 (vs ~14ms for INTER_LINEAR)
+                if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
+                    preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_NEAREST)
+                else:
+                    preview_frame = frame
+
+                jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
+
+                if jpeg_bytes is not None:
+                    with condition:
+                        state["jpeg"] = jpeg_bytes
+                        state["pitch"] = pitch
+                        state["roll"] = roll
+                        state["ax"] = ax
+                        state["ay"] = ay
+                        state["az"] = az
+                        state["fps"] = current_fps
+                        state["frame_id"] = frame_count
+                        condition.notify_all()
 
                 # Throttle only in synthetic mock mode to prevent 100% CPU spin when no V4L2 device blocks
                 if getattr(cam, "is_synthetic_active", False) or cam.mock_mode:
                     time.sleep(1.0 / max(cam.fps, 1))
             except Exception as e:
-                logger.error("Error in camera_grabber_worker: %s", e)
-                time.sleep(0.02)
+                logger.error("Error in capture_worker: %s", e, exc_info=True)
+                time.sleep(0.05)
 
-    def preview_encoder_worker():
-        """Single encoder worker that always grabs the freshest frame, downscales, and encodes JPEG.
-        Runs asynchronously from camera capture, decoupling V4L2 grab rate from encoding time."""
-        target_size = (preview_width, preview_height)
-        last_processed_id = 0
-        frame_timestamps = []
-
-        while not stop_event.is_set():
-            with capture_cond:
-                while raw_state["grab_id"] == last_processed_id and not stop_event.is_set():
-                    capture_cond.wait(timeout=0.05)
-                if stop_event.is_set():
-                    break
-                frame = raw_state["frame"]
-                pitch = raw_state["pitch"]
-                roll = raw_state["roll"]
-                ax = raw_state["ax"]
-                ay = raw_state["ay"]
-                az = raw_state["az"]
-                last_processed_id = raw_state["grab_id"]
-
-            if frame is None:
-                continue
-
-            now = time.time()
-            frame_timestamps.append(now)
-            if len(frame_timestamps) > 20:
-                frame_timestamps.pop(0)
-            if len(frame_timestamps) >= 2:
-                current_fps = (len(frame_timestamps) - 1) / (frame_timestamps[-1] - frame_timestamps[0])
-            else:
-                current_fps = 0.0
-
-            # Fast downscale: INTER_NEAREST is ~4x faster than INTER_LINEAR on ARM Cortex-A53
-            if (preview_width, preview_height) != (frame.shape[1], frame.shape[0]):
-                preview_frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_NEAREST)
-            else:
-                preview_frame = frame
-
-            jpeg_bytes = FastJpegEncoder.encode(preview_frame, quality=preview_quality)
-            if jpeg_bytes is not None:
-                with state_cond:
-                    state["jpeg"] = jpeg_bytes
-                    state["pitch"] = pitch
-                    state["roll"] = roll
-                    state["ax"] = ax
-                    state["ay"] = ay
-                    state["az"] = az
-                    state["fps"] = current_fps
-                    state["frame_id"] = last_processed_id
-                    state_cond.notify_all()
-
-    grabber_thread = threading.Thread(target=camera_grabber_worker, daemon=True)
-    encoder_thread = threading.Thread(target=preview_encoder_worker, daemon=True)
-    grabber_thread.start()
-    encoder_thread.start()
+    worker_thread = threading.Thread(target=capture_worker, daemon=True)
+    worker_thread.start()
 
     class PreviewHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass  # Suppress HTTP access noise
 
         def do_GET(self):
-            import select
-
             if self.path in ("/", "/preview", "/preview/"):
                 html = """<!DOCTYPE html>
 <html lang="vi">
@@ -383,116 +338,63 @@ def run_preview_server(
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #090d16; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 12px; }
-        .hud-card { background: #131c2e; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; width: 100%; max-width: 660px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+        .hud-card { background: #131c2e; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; width: 100%; max-width: 580px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .title { font-size: 14px; font-weight: bold; color: #38bdf8; letter-spacing: 0.5px; }
         .badge-live { background: #059669; color: #ecfdf5; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 4px; }
         .badge-live::before { content: ""; width: 6px; height: 6px; background: #34d399; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
         .video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #334155; }
-        #live-canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
-        .stat-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 6px; text-align: center; }
+        #live-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+        .stat-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 10px; text-align: center; }
         .stat-label { font-size: 10px; text-transform: uppercase; color: #94a3b8; margin-bottom: 2px; font-weight: 600; letter-spacing: 0.5px; }
         .stat-value { font-size: 13px; font-weight: 700; font-family: monospace; color: #f8fafc; }
         .fps-val { color: #10b981; }
         .att-val { color: #38bdf8; }
         .imu-val { color: #f59e0b; font-size: 11px; }
-        .sub-bar { margin-top: 8px; font-size: 11px; color: #64748b; text-align: right; }
-        .sub-bar a { color: #38bdf8; text-decoration: none; }
     </style>
 </head>
 <body>
     <div class="hud-card">
         <div class="header">
-            <span class="title">PCAM 5C & MPU-6050 HUD (ZERO-LATENCY)</span>
+            <span class="title">PCAM 5C & MPU-6050 HUD</span>
             <span class="badge-live">LIVE FEED</span>
         </div>
         <div class="video-container">
-            <canvas id="live-canvas" width="640" height="360"></canvas>
+            <img id="live-img" src="/stream.mjpg" alt="Feed">
         </div>
         <div class="stats-grid">
             <div class="stat-box">
-                <div class="stat-label">Pi Capture</div>
-                <div class="stat-value fps-val" id="cap-fps-txt">-- FPS</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Laptop Render</div>
-                <div class="stat-value fps-val" id="render-fps-txt">-- FPS</div>
+                <div class="stat-label">Capture FPS</div>
+                <div class="stat-value fps-val" id="fps-txt">-- FPS</div>
             </div>
             <div class="stat-box">
                 <div class="stat-label">Pitch / Roll</div>
                 <div class="stat-value att-val" id="att-txt">0.0° / 0.0°</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Accel (g)</div>
-                <div class="stat-value imu-val" id="accel-txt">0.00, 0.00, 1.00</div>
+                <div class="stat-label">Accel (Ax, Ay, Az)</div>
+                <div class="stat-value imu-val" id="accel-txt">0.00, 0.00, 1.00g</div>
             </div>
-        </div>
-        <div class="sub-bar">
-            Direct pull via Canvas API | Stream node: <a href="/stream.mjpg" target="_blank">/stream.mjpg</a>
         </div>
     </div>
     <script>
-        const canvas = document.getElementById('live-canvas');
-        const ctx = canvas.getContext('2d');
-        let inFlight = false;
-        let renderFrames = 0;
-        let lastRenderTime = performance.now();
-
-        async function renderLoop() {
-            if (!inFlight) {
-                inFlight = true;
-                try {
-                    const res = await fetch('/snapshot.jpg?t=' + Date.now(), { cache: 'no-store' });
-                    if (res.ok) {
-                        const blob = await res.blob();
-                        if (window.createImageBitmap) {
-                            const bitmap = await createImageBitmap(blob);
-                            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                            bitmap.close();
-                        } else {
-                            const img = new Image();
-                            const url = URL.createObjectURL(blob);
-                            await new Promise(resolve => {
-                                img.onload = () => {
-                                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                    URL.revokeObjectURL(url);
-                                    resolve();
-                                };
-                                img.src = url;
-                            });
-                        }
-                        renderFrames++;
-                    }
-                } catch (e) {
-                } finally {
-                    inFlight = false;
-                }
-            }
-
-            const now = performance.now();
-            if (now - lastRenderTime >= 1000) {
-                const fps = (renderFrames * 1000) / (now - lastRenderTime);
-                document.getElementById('render-fps-txt').innerText = fps.toFixed(1) + ' FPS';
-                renderFrames = 0;
-                lastRenderTime = now;
-            }
-
-            requestAnimationFrame(renderLoop);
-        }
-        requestAnimationFrame(renderLoop);
+        const img = document.getElementById('live-img');
+        img.onerror = () => {
+            setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
+        };
 
         setInterval(() => {
             fetch('/telemetry')
                 .then(r => r.json())
                 .then(d => {
-                    document.getElementById('cap-fps-txt').innerText = `${d.fps.toFixed(1)} FPS`;
+                    document.getElementById('fps-txt').innerText = `${d.fps.toFixed(1)} FPS`;
                     document.getElementById('att-txt').innerText = (d.pitch >= 0 ? '+' : '') + d.pitch.toFixed(1) + '° / ' + (d.roll >= 0 ? '+' : '') + d.roll.toFixed(1) + '°';
-                    document.getElementById('accel-txt').innerText = `${d.ax.toFixed(2)}, ${d.ay.toFixed(2)}, ${d.az.toFixed(2)}`;
+                    document.getElementById('accel-txt').innerText = `${d.ax.toFixed(2)}, ${d.ay.toFixed(2)}, ${d.az.toFixed(2)}g`;
                 })
                 .catch(() => {});
-        }, 150);
+        }, 200);
     </script>
 </body>
 </html>"""
@@ -506,12 +408,7 @@ def run_preview_server(
 
             elif self.path.startswith("/stream.mjpg"):
                 try:
-                    # Optimize socket: disable Nagle's algorithm and limit send buffer
                     self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    try:
-                        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32768)
-                    except OSError:
-                        pass
 
                     self.send_response(200)
                     self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
@@ -523,21 +420,15 @@ def run_preview_server(
 
                     last_id = -1
                     while not stop_event.is_set():
-                        with state_cond:
+                        with condition:
                             while state["frame_id"] == last_id and not stop_event.is_set():
-                                state_cond.wait(timeout=0.1)
+                                condition.wait(timeout=0.1)
                             if stop_event.is_set():
                                 break
                             jpeg_bytes = state["jpeg"]
                             last_id = state["frame_id"]
 
                         if jpeg_bytes is None:
-                            continue
-
-                        # Server-Side Backpressure: Check if socket is writable without blocking.
-                        # If kernel TCP send buffer is full, drop frame to completely prevent bufferbloat.
-                        _, w, _ = select.select([], [self.connection], [], 0.0)
-                        if not w:
                             continue
 
                         header = (
@@ -551,7 +442,7 @@ def run_preview_server(
                     pass
 
             elif self.path.startswith("/snapshot.jpg"):
-                with state_cond:
+                with condition:
                     jpeg_bytes = state["jpeg"]
                 if jpeg_bytes:
                     try:
@@ -559,8 +450,6 @@ def run_preview_server(
                         self.send_header("Content-Type", "image/jpeg")
                         self.send_header("Content-Length", str(len(jpeg_bytes)))
                         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                        self.send_header("Pragma", "no-cache")
-                        self.send_header("Expires", "0")
                         self.end_headers()
                         self.wfile.write(jpeg_bytes)
                     except (BrokenPipeError, ConnectionResetError):
@@ -570,7 +459,7 @@ def run_preview_server(
                     self.end_headers()
 
             elif self.path.startswith("/telemetry"):
-                with state_cond:
+                with condition:
                     telemetry = {
                         "fps": state["fps"],
                         "pitch": state["pitch"],
@@ -607,13 +496,10 @@ def run_preview_server(
         logger.info("Shutting down preview server...")
     finally:
         stop_event.set()
-        with capture_cond:
-            capture_cond.notify_all()
-        with state_cond:
-            state_cond.notify_all()
+        with condition:
+            condition.notify_all()
         server.server_close()
-        grabber_thread.join(timeout=1.0)
-        encoder_thread.join(timeout=1.0)
+        worker_thread.join(timeout=1.0)
         cam.release()
         imu.close()
 
