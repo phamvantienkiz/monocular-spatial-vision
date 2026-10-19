@@ -204,3 +204,23 @@ def test_camera_hardware_flip_bypass():
     assert frame_sw.shape == frame_hw.shape
     cam.release()
 
+
+def test_cli_main_argparse(monkeypatch):
+    """Validates CLI argument parsing and variable resolution for stream mode."""
+    from pi_capture_agent.cli import main
+
+    mock_called = {}
+
+    def mock_run_stream(**kwargs):
+        mock_called.update(kwargs)
+
+    monkeypatch.setattr("pi_capture_agent.cli.run_stream", mock_run_stream)
+    monkeypatch.setattr("sys.argv", ["cli.py", "--mode", "stream"])
+
+    main()
+    assert "i2c_bus" in mock_called
+    assert "i2c_addr" in mock_called
+    assert "jpeg_quality" in mock_called
+    assert mock_called["jpeg_quality"] == 70
+    assert mock_called["use_hardware_flip"] is True
+

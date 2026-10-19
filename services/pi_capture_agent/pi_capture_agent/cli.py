@@ -721,6 +721,9 @@ def main() -> None:
     preview_height = args.preview_height or dev_cfg.get("preview_height", 360)
     preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 65)
 
+    i2c_bus = imu_cfg.get("i2c_bus", 1)
+    i2c_addr = imu_cfg.get("i2c_address", 0x68)
+
     opt_cfg = cfg.get("optimization", {})
     use_hw_flip = args.use_hardware_flip if args.use_hardware_flip is not None else opt_cfg.get("use_hardware_flip", True)
     jpeg_quality = args.jpeg_quality or opt_cfg.get("jpeg_quality") or stream_cfg.get("jpeg_quality", 70)
