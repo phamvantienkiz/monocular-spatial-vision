@@ -5,18 +5,48 @@ vector instructions on Raspberry Pi 3 (Cortex-A53), reducing JPEG compression ti
 by 2.5x to 3.0x compared to generic software encoders.
 """
 
+import ctypes.util
+import glob
 import logging
 from typing import Optional
 import numpy as np
 
 logger = logging.getLogger("pi_capture_agent.jpeg")
 
+
+def _find_turbojpeg_lib() -> Optional[str]:
+    """Finds turbojpeg shared library path across standard Linux multiarch locations."""
+    found = ctypes.util.find_library("turbojpeg")
+    if found:
+        return found
+
+    candidate_patterns = [
+        "/usr/lib/arm-linux-gnueabihf/libturbojpeg.so*",
+        "/usr/lib/aarch64-linux-gnu/libturbojpeg.so*",
+        "/usr/lib/*/libturbojpeg.so*",
+        "/usr/lib/libturbojpeg.so*",
+        "/usr/local/lib/libturbojpeg.so*",
+    ]
+    for pattern in candidate_patterns:
+        matches = sorted(glob.glob(pattern))
+        if matches:
+            for m in matches:
+                if m.endswith(".so"):
+                    return m
+            return matches[0]
+    return None
+
+
 try:
     from turbojpeg import TurboJPEG, TJPF_BGR
 
-    _turbo_instance = TurboJPEG()
+    _lib_path = _find_turbojpeg_lib()
+    if _lib_path:
+        _turbo_instance = TurboJPEG(_lib_path)
+    else:
+        _turbo_instance = TurboJPEG()
     HAS_TURBOJPEG = True
-    logger.info("TurboJPEG initialized successfully with ARM NEON acceleration.")
+    logger.info("TurboJPEG initialized successfully with ARM NEON acceleration (lib: %s).", _lib_path or "default")
 except Exception as e:
     _turbo_instance = None
     HAS_TURBOJPEG = False
