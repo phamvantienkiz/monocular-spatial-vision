@@ -259,3 +259,53 @@ def test_camera_driver_scale_to_custom_dimensions():
     assert frame.shape == (360, 640, 3)
     cam.release()
 
+
+def test_preview_server_endpoints():
+    """Verifies that run_preview_server starts and serves /, /telemetry, /snapshot.jpg, /stream.mjpg without NameError or crash."""
+    import urllib.request
+    import threading
+    import time
+    from pi_capture_agent.cli import run_preview_server
+
+    test_port = 18099
+    server_thread = threading.Thread(
+        target=run_preview_server,
+        kwargs={
+            "device": "/dev/video_mock",
+            "width": 640,
+            "height": 360,
+            "port": test_port,
+            "i2c_bus": 1,
+            "i2c_addr": 0x68,
+        },
+        daemon=True,
+    )
+    server_thread.start()
+    time.sleep(0.5)
+
+    # Test /
+    with urllib.request.urlopen(f"http://127.0.0.1:{test_port}/", timeout=3.0) as resp:
+        assert resp.status == 200
+        html = resp.read().decode("utf-8")
+        assert "PCAM 5C & MPU-6050 HUD" in html
+
+    # Test /telemetry
+    with urllib.request.urlopen(f"http://127.0.0.1:{test_port}/telemetry", timeout=3.0) as resp:
+        assert resp.status == 200
+        import json
+        data = json.loads(resp.read().decode("utf-8"))
+        assert "fps" in data
+
+    # Test /snapshot.jpg
+    with urllib.request.urlopen(f"http://127.0.0.1:{test_port}/snapshot.jpg", timeout=3.0) as resp:
+        assert resp.status == 200
+        assert resp.headers.get_content_type() == "image/jpeg"
+
+    # Test /stream.mjpg (first chunk)
+    req = urllib.request.Request(f"http://127.0.0.1:{test_port}/stream.mjpg")
+    with urllib.request.urlopen(req, timeout=3.0) as resp:
+        assert resp.status == 200
+        first_chunk = resp.read(200)
+        assert b"--frame" in first_chunk or b"image/jpeg" in first_chunk
+
+

@@ -15,6 +15,7 @@ import time
 import signal
 import logging
 import json
+import socket
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Optional
