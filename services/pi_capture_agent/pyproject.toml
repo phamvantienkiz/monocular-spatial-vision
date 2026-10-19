@@ -9,7 +9,7 @@ dependencies = [
     "smbus2>=0.4.0",
     "pyyaml>=6.0",
     "numpy>=1.21.0",
-    "PyTurboJPEG>=1.7.5"
+    "PyTurboJPEG>=1.7.0,<2.0.0"
 ]
 
 [project.optional-dependencies]

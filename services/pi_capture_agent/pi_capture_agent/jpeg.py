@@ -38,7 +38,7 @@ def _find_turbojpeg_lib() -> Optional[str]:
 
 
 try:
-    from turbojpeg import TurboJPEG, TJPF_BGR
+    from turbojpeg import TurboJPEG, TJPF_BGR, TJSAMP_420, TJFLAG_FASTDCT
 
     _lib_path = _find_turbojpeg_lib()
     if _lib_path:
@@ -78,8 +78,14 @@ class FastJpegEncoder:
         # 1. High-speed path: TurboJPEG with ARM NEON SIMD vectorization
         if HAS_TURBOJPEG and _turbo_instance is not None:
             try:
-                # Fast encode directly from BGR memory buffer
-                jpeg_bytes = _turbo_instance.encode(frame, quality=quality, pixel_format=TJPF_BGR)
+                # Fast encode directly from BGR memory buffer with 4:2:0 chroma subsampling and Fast integer DCT
+                jpeg_bytes = _turbo_instance.encode(
+                    frame,
+                    quality=quality,
+                    pixel_format=TJPF_BGR,
+                    jpeg_subsample=TJSAMP_420,
+                    flags=TJFLAG_FASTDCT,
+                )
                 if jpeg_bytes:
                     return jpeg_bytes
             except Exception as e:
