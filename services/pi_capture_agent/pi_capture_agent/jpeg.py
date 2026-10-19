@@ -20,7 +20,7 @@ try:
 except Exception as e:
     _turbo_instance = None
     HAS_TURBOJPEG = False
-    logger.debug("TurboJPEG not available (%s). Defaulting to standard OpenCV encoder.", e)
+    logger.warning("TurboJPEG not available (%s). Defaulting to standard OpenCV encoder.", e)
 
 
 class FastJpegEncoder:

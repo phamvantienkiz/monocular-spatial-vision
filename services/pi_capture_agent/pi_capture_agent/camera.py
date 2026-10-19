@@ -58,15 +58,43 @@ class CameraDriver:
                 sensor = re.search(r"entity \d+: (ov5640 [\w-]+)", r.stdout)
                 if sensor:
                     sensor_entity = sensor.group(1)
-                    fmt_cmd = [
+                    # Negotiate pad format with target FPS (e.g. @1/30)
+                    fmt_cmd_fps = [
                         "media-ctl",
                         "-d",
                         m,
                         "-V",
-                        f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}]",
+                        f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}@1/{self.fps}]",
                     ]
-                    subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
-                    logger.info("Negotiated media-ctl pipeline: %s:0 -> %dx%d UYVY", sensor_entity, self.width, self.height)
+                    res = subprocess.run(fmt_cmd_fps, capture_output=True, text=True, timeout=3)
+                    if res.returncode != 0:
+                        # Fallback without frame interval if media-ctl syntax variant
+                        fmt_cmd = [
+                            "media-ctl",
+                            "-d",
+                            m,
+                            "-V",
+                            f"'{sensor_entity}':0 [fmt:UYVY8_1X16/{self.width}x{self.height}]",
+                        ]
+                        subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=3)
+
+                    # Explicitly set sensor frame rate on V4L2 subdevices
+                    for subdev in sorted(glob.glob("/dev/v4l-subdev*")):
+                        subprocess.run(
+                            ["v4l2-ctl", "-d", subdev, f"--set-subdev-fps=pad=0,fps={self.fps}"],
+                            capture_output=True,
+                            text=True,
+                            timeout=1,
+                        )
+                    # And try configuring capture node frame rate
+                    subprocess.run(
+                        ["v4l2-ctl", "-d", str(self.device), "-p", str(self.fps)],
+                        capture_output=True,
+                        text=True,
+                        timeout=1,
+                    )
+
+                    logger.info("Negotiated media-ctl pipeline: %s:0 -> %dx%d @ %d FPS UYVY", sensor_entity, self.width, self.height, self.fps)
                     break
             except Exception as e:
                 logger.debug("media-ctl negotiation notice: %s", e)
