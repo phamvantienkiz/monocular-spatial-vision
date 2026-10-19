@@ -59,9 +59,9 @@ class CameraDriver:
                 if sensor:
                     sensor_entity = sensor.group(1)
                     # Hardware constraint: OV5640 CSI-2 sensor hardware timing supports native 1280x720 @ 30 FPS.
-                    # Setting non-standard sensor modes (like 640x360) directly in media-ctl breaks sensor PLL clock.
-                    # Therefore, sensor pad is locked to native 1280x720, and CameraDriver handles 640x360 scaling.
-                    sensor_w, sensor_h = (1280, 720) if (self.width, self.height) == (640, 360) else (self.width, self.height)
+                    # Setting non-standard sensor modes (e.g. 640x360 or 640x480) breaks sensor PLL clock and causes CSI desync.
+                    # Therefore, sensor pad is locked to native 1280x720, guaranteeing rock-solid 30 FPS CSI-2 transmission.
+                    sensor_w, sensor_h = (1280, 720) if (self.width <= 1280 and self.height <= 720) else (self.width, self.height)
                     fmt_cmd_fps = [
                         "media-ctl",
                         "-d",
@@ -179,10 +179,9 @@ class CameraDriver:
                 self._cap.set(cv2.CAP_PROP_FOURCC, float(fourcc))
 
             # Configure resolution and FPS
-            # Hardware constraint: OV5640 16:9 mode requires native 1280x720 sensor timing.
-            # If 640x360 is requested, capture at 1280x720 and let read_raw() scale cleanly to 640x360.
-            v4l_w = 1280 if (self.width, self.height) == (640, 360) else self.width
-            v4l_h = 720 if (self.width, self.height) == (640, 360) else self.height
+            # Hardware constraint: OV5640 requires native 1280x720 sensor timing on Unicam.
+            v4l_w = 1280 if (self.width <= 1280 and self.height <= 720) else self.width
+            v4l_h = 720 if (self.width <= 1280 and self.height <= 720) else self.height
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(v4l_w))
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(v4l_h))
             self._cap.set(cv2.CAP_PROP_FPS, float(self.fps))
@@ -291,7 +290,7 @@ class CameraDriver:
         if frame is not None:
             # If sensor delivered a different resolution from requested dimensions, scale cleanly
             if (frame.shape[1], frame.shape[0]) != (self.width, self.height):
-                frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+                frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_NEAREST)
 
             # Apply orientation correction:
             # Only perform software CPU flip if hardware flip was not applied on sensor

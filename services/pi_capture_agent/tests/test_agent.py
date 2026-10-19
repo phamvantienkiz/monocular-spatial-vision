@@ -156,14 +156,14 @@ def test_capture_config_preview_parameters():
     dev = cfg.get("device", {})
     assert dev.get("vflip") is True
     assert dev.get("rotate_180") is False
-    assert dev.get("preview_width") == 640
-    assert dev.get("preview_height") == 480
-    assert dev.get("preview_quality") == 65
+    assert dev.get("preview_width") == 1280
+    assert dev.get("preview_height") == 720
+    assert dev.get("preview_quality") == 60
 
     # Check optimization section
     opt = cfg.get("optimization", {})
     assert opt.get("use_hardware_flip") is True
-    assert opt.get("jpeg_quality") == 70
+    assert opt.get("jpeg_quality") == 65
 
 
 def test_fast_jpeg_encoder_valid_output():
@@ -221,11 +221,11 @@ def test_cli_main_argparse(monkeypatch):
     assert "i2c_bus" in mock_called
     assert "i2c_addr" in mock_called
     assert "jpeg_quality" in mock_called
-    assert mock_called["jpeg_quality"] == 70
+    assert mock_called["jpeg_quality"] == 65
     assert mock_called["use_hardware_flip"] is True
     assert mock_called["threaded"] is True
-    assert mock_called["width"] == 640
-    assert mock_called["height"] == 480
+    assert mock_called["width"] == 1280
+    assert mock_called["height"] == 720
 
 
 def test_cli_main_stage2_custom_resolution_and_threading(monkeypatch):

@@ -225,9 +225,9 @@ def run_preview_server(
     pixel_format: str = "UYVY",
     vflip: bool = True,
     rotate_180: bool = False,
-    preview_width: int = 640,
-    preview_height: int = 360,
-    preview_quality: int = 65,
+    preview_width: int = 1280,
+    preview_height: int = 720,
+    preview_quality: int = 60,
     use_hardware_flip: bool = True,
 ) -> None:
     """Runs a high-performance diagnostic HTTP preview server serving live frames and telemetry to laptop."""
@@ -864,9 +864,9 @@ def main() -> None:
     pixel_format = args.pixel_format or dev_cfg.get("pixel_format", "UYVY")
     vflip = args.vflip if args.vflip is not None else dev_cfg.get("vflip", True)
     rotate_180 = args.rotate_180 if args.rotate_180 is not None else dev_cfg.get("rotate_180", False)
-    preview_width = args.preview_width or dev_cfg.get("preview_width", 640)
-    preview_height = args.preview_height or dev_cfg.get("preview_height", 360)
-    preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 65)
+    preview_width = args.preview_width or dev_cfg.get("preview_width", 1280)
+    preview_height = args.preview_height or dev_cfg.get("preview_height", 720)
+    preview_quality = args.preview_quality or dev_cfg.get("preview_quality", 60)
 
     i2c_bus = imu_cfg.get("i2c_bus", 1)
     i2c_addr = imu_cfg.get("i2c_address", 0x68)
