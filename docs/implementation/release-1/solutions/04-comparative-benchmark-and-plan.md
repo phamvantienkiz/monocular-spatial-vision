@@ -8,24 +8,22 @@
 
 ## 1. Ma Trận Đánh Giá So Sánh Các Giải Pháp
 
-Dựa trên dữ liệu thực nghiệm đo đạc thực tế 100 frames trên phần cứng Pi 3:
-- **Baseline (OpenCV Scalar 720p):** Grab 34.8ms + Encode 67.3ms = **9.8 FPS**
-- **Giai đoạn 1 (Hardware Flip + PyTurboJPEG 720p):** Grab 35.1ms + Encode 59.4ms = **10.5 FPS** (Nghẽn trần vật lý 1 nhân CPU)
-- **Giai đoạn 2A (Hardware Binning / Downscale 640x360):** Grab 20.0ms + Encode 12.5ms = **28 – 30 FPS**
-- **Giai đoạn 2B (Threaded Pipeline + VideoCore IV VPU 720p):** Grab 33.3ms + Hardware VPU 4.2ms = **30.0 FPS**
+Dựa trên dữ liệu thực nghiệm đo đạc thực tế 100 frames trên phần cứng Pi 3 (`log_pi_3.md`):
+- **Baseline lỗi (`BUFFERSIZE=1` + 1 luồng tuần tự 720p):** Grab 41.3ms (bị `unicam` đổ vào `dummy_buf`) + Encode 60.6ms = **9.8 FPS** (Preview Wi-Fi tụt `< 9 FPS`).
+- **Giai đoạn 1+2B (Đã triển khai trong Python: `BUFFERSIZE=4` + 3 Thread-Local TurboJPEG Workers 720p):** Grab $\le 33.3\text{ms}$ + Effective Encode $\frac{55\text{ms}}{3} \approx 18.3\text{ms}$ = **26 – 30 FPS**.
+- **Giai đoạn 2A (Decoupled Preview `640x360` với `2x2` Strided Decimation + `SO_SNDBUF=32KB`):** Downscale $0.8\text{ms}$ + Encode $12.5\text{ms}$ = **30.0 FPS mượt mà qua Wi-Fi**.
+- **Phiên bản Đối chuẩn C/C++ (`release-1c`: V4L2 MMAP Zero-Copy + NEON `UYVY->RGB` + `libturbojpeg`):** Grab + Convert + Encode $< 15\text{ms}$ = **30.0 FPS**, CPU $< 20\%$, RAM $< 15\text{MB}$.
 
-| Tiêu chí | Baseline (Hiện trạng) | Giai đoạn 1 (Đã hoàn thành) | Giai đoạn 2A: Hardware Binning 640 | Giai đoạn 2B: VideoCore IV VPU |
+| Tiêu chí | Baseline Lỗi Cũ (`log_pi_3.md`) | Python Đã Tối Ưu (Multi-Core 720p) | Python Preview / 640x360 | Bản C/C++ (`release-1c`) |
 | :--- | :---: | :---: | :---: | :---: |
-| **Công cụ lật ảnh** | `cv2.flip` (CPU) | **Thanh ghi OV5640** | **Thanh ghi OV5640** | **Thanh ghi OV5640** |
-| **Độ phân giải nén** | 1280x720 | 1280x720 | **640x360 (Tối ưu YOLO)** | **1280x720 (Gốc)** |
-| **Công cụ nén ảnh** | `cv2.imencode` | `PyTurboJPEG` (NEON) | `PyTurboJPEG` (NEON) | **/dev/video11 (VPU M2M)** |
-| **Thời gian lật ảnh** | $12.4\text{ ms}$ | **$0.0\text{ ms}$** | **$0.0\text{ ms}$** | **$0.0\text{ ms}$** |
-| **Thời gian nén ảnh** | $67.3\text{ ms}$ | $59.4\text{ ms}$ | **$12.5\text{ ms}$** | **$4.2\text{ ms}$** |
-| **Tổng chu kỳ / frame** | $102.1\text{ ms}$ | $95.1\text{ ms}$ | **$32.5\text{ ms}$** | **$33.3\text{ ms}$** |
-| **FPS thực tế đạt được**| **9.8 – 10.5 FPS** | **10.5 – 15.1 FPS** | **$\mathbf{28 – 30\text{ FPS}}$** | **$\mathbf{30.0\text{ FPS}}$** |
-| **Tải CPU 4 nhân Pi 3** | 100% (1 nhân nghẽn) | 100% (1 nhân nghẽn) | **< 35% (Rất mát)** | **< 8% (Cực kỳ mát)** |
-| **Góc nhìn không gian (FOV)**| 100% Full FOV | 100% Full FOV | **100% Full FOV** | **100% Full FOV** |
-| **Tính tương thích Backend**| Gốc | Không đổi (Zero-change) | Ma trận $K$ tỉ lệ $0.5$ | Không đổi (Zero-change) |
+| **Số bộ đệm V4L2 DMA** | `BUFFERSIZE = 1` (Lỗi rơi frame) | **`BUFFERSIZE = 4`** | **`BUFFERSIZE = 4`** | **`4 MMAP Rings`** |
+| **Công cụ lật ảnh** | Thanh ghi OV5640 (dễ bị reset) | **OV5640 (Tái xác nhận sau STREAMON)** | **OV5640 Hardware Flip** | **OV5640 (`v4l2-subdev0`)** |
+| **Độ phân giải nén** | 1280x720 | **1280x720 (Gốc)** | **640x360 (`2x2` Decimation)** | **1280x720 / 640x360** |
+| **Công cụ nén ảnh** | 1 luồng `PyTurboJPEG` | **3 Luồng Thread-Local `PyTurboJPEG`** | **2 Luồng Thread-Local `PyTurboJPEG`** | **C++ `tjCompress2` + NEON** |
+| **Thời gian đọc V4L2** | $41.29\text{ ms}$ (bị khóa 3 VSYNC) | **$\le 33.3\text{ ms}$ (1 VSYNC)** | **$\le 33.3\text{ ms}$ (1 VSYNC)** | **$< 1.0\text{ ms}$ (`DQBUF`)** |
+| **Thời gian nén hiệu dụng**| $60.62\text{ ms}$ (1 nhân) | **$\approx 18.3\text{ ms}$ (chia 3 nhân)** | **$\approx 12.5\text{ ms}$** | **$\approx 12.0 – 15.0\text{ ms}$** |
+| **FPS thực tế đạt được**| **< 9 – 9.8 FPS** | **$\mathbf{26 – 30\text{ FPS}}$** | **$\mathbf{30.0\text{ FPS}}$** | **$\mathbf{30.0\text{ FPS}}$** |
+| **Giao thức Header** | 40-byte (`>HHIQffIIII`) | **40-byte (`>HHIQffIIII`)** | MJPEG HTTP (`SO_SNDBUF=32KB`) | **40-byte (`>HHIQffIIII`)** |
 
 ---
 

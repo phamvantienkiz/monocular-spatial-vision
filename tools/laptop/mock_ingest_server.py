@@ -1,7 +1,7 @@
 """Mock Ingest Server for Developer Laptop.
 
 Listens on TCP port 9876, receives packets from Raspberry Pi 3,
-unpacks 36-byte binary header, displays frame in OpenCV window, and prints telemetry stats.
+unpacks 40-byte binary header, displays frame in OpenCV window, and prints telemetry stats.
 
 Usage:
     python tools/laptop/mock_ingest_server.py --port 9876
@@ -34,7 +34,7 @@ def run_mock_server(port: int = 9876):
 
         try:
             while True:
-                # Read 36-byte header
+                # Read 40-byte header
                 header_data = bytearray()
                 while len(header_data) < HEADER_SIZE:
                     packet = client_sock.recv(HEADER_SIZE - len(header_data))

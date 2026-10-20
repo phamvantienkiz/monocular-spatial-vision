@@ -309,3 +309,60 @@ def test_preview_server_endpoints():
         assert b"--frame" in first_chunk or b"image/jpeg" in first_chunk
 
 
+def test_fast_downscale_strided_decimation_contiguous():
+    """Validates CameraDriver.fast_downscale uses 2x2 strided decimation and returns C-contiguous array."""
+    raw = np.arange(720 * 1280 * 3, dtype=np.uint8).reshape((720, 1280, 3))
+    scaled = CameraDriver.fast_downscale(raw, (640, 360))
+    assert scaled.shape == (360, 640, 3)
+    assert scaled.flags["C_CONTIGUOUS"] is True
+    assert np.array_equal(scaled[0, 0], raw[0, 0])
+    assert np.array_equal(scaled[1, 1], raw[2, 2])
+
+
+def test_fast_jpeg_encoder_non_contiguous_and_multithreaded():
+    """Validates FastJpegEncoder handles non-contiguous views and concurrent worker threads safely."""
+    import threading
+    from pi_capture_agent.jpeg import FastJpegEncoder
+
+    raw = np.full((720, 1280, 3), 90, dtype=np.uint8)
+    # Non-contiguous slice
+    non_contig = raw[::2, ::2]
+    assert non_contig.flags["C_CONTIGUOUS"] is False
+
+    results = []
+    errors = []
+
+    def worker():
+        try:
+            for _ in range(5):
+                jb = FastJpegEncoder.encode(non_contig, quality=65)
+                assert jb is not None and jb.startswith(b"\xff\xd8")
+                results.append(len(jb))
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5.0)
+
+    assert errors == []
+    assert len(results) == 20
+
+
+def test_run_test_perf_mock_mode():
+    """Validates run_test_perf completes both sequential and multi-core benchmarks in mock mode."""
+    from pi_capture_agent.cli import run_test_perf
+
+    run_test_perf(
+        device="/dev/video_mock",
+        width=640,
+        height=360,
+        frames=6,
+        num_workers=2,
+        buffer_size=4,
+    )
+
+
+

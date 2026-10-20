@@ -336,15 +336,17 @@ python -m pi_capture_agent.cli --mode snapshot --output ./test_frame.jpg
 Ảnh được lưu vào `./test_frame.jpg` với độ phân giải $1280 \times 720$.
 
 ### Nấc 3: Mở HTTP Preview Server trên Pi 3 (`--mode preview`)
-Nếu không cắm màn hình vào Pi 3, hãy khởi chạy chế độ preview:
+Nếu không cắm màn hình vào Pi 3, hãy khởi chạy chế độ preview (đã tách rời 3 miền luồng `v4l2_grabber`, `imu_poller`, `preview_encoder` với `SO_SNDBUF = 32 KB` và decimation `2x2` siêu tốc):
 ```bash
 python -m pi_capture_agent.cli --mode preview --preview-port 8080
+# Nếu test trong phòng thiếu sáng muốn khóa tốc độ màn trập chống bóng mờ (motion blur):
+python -m pi_capture_agent.cli --mode preview --preview-port 8080 --exposure 450
 ```
 Từ trình duyệt trên Laptop, mở:
 ```text
 http://<ip_pi_3>:8080/preview
 ```
-Bạn sẽ thấy hình ảnh camera trực tiếp được cập nhật liên tục để căn chỉnh tiêu cự, góc chúc và ánh sáng phòng thí nghiệm.
+Bạn sẽ thấy hình ảnh camera trực tiếp ở tốc độ **25 – 30 FPS** cùng chỉ số `Stream / Sensor FPS` để căn chỉnh tiêu cự, góc chúc và ánh sáng phòng thí nghiệm.
 
 ### Nấc 4: Kiểm tra đọc dữ liệu góc nghiêng IMU (`--mode test-imu`)
 ```bash
@@ -357,16 +359,16 @@ Terminal in ra:
 ```
 Khi dùng tay nghiêng giá đỡ camera lên/xuống, giá trị Pitch thay đổi tức thời mà không có độ trễ.
 
-### Nấc 5: Stream luồng nhị phân 36-byte về Laptop (`--mode stream`)
+### Nấc 5: Stream luồng nhị phân 40-byte về Laptop (`--mode stream`)
 1. **Trên Laptop:** Khởi động backend ingest:
    ```bash
    python tools/laptop/mock_ingest_server.py --port 9876
    # Hoặc khởi động trọn bộ FastAPI Backend:
    uvicorn services.backend.app.main:app --host 0.0.0.0 --port 8000
    ```
-2. **Trên Raspberry Pi 3:** Bắt đầu stream tới IP Laptop:
+2. **Trên Raspberry Pi 3:** Bắt đầu stream tới IP Laptop (qua Wi-Fi hoặc cáp Ethernet cắm qua Hub Type-C):
    ```bash
-   python -m pi_capture_agent.cli --mode stream --host <IP_LAPTOP> --port 9876
+   python -m pi_capture_agent.cli --mode stream --host <IP_LAPTOP> --port 9876 --workers 3 --buffer-size 4
    ```
 3. **Mở trình duyệt trên Laptop:** `http://localhost:8000/hud` để quan sát toàn bộ Camera Live Feed, 3D Attitude Gauge và số liệu telemetry thời gian thực!
 

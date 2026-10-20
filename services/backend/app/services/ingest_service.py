@@ -1,7 +1,7 @@
 """Network Ingest Service: TCP server receiving binary frames from Pi 3.
 
 Decouples network socket reception from perception AI inference using a thread-safe
-ring buffer and handles 36-byte big-endian binary protocol frames.
+ring buffer and handles 40-byte big-endian binary protocol frames.
 """
 
 import socket
@@ -17,7 +17,7 @@ import numpy as np
 logger = logging.getLogger("monocular_backend.ingest")
 
 HEADER_FORMAT = ">HHIQffIIII"
-HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 36 bytes
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 40 bytes
 MAGIC_NUMBER = 0x5043  # 'PC' in hex
 PROTOCOL_VERSION = 1
 
@@ -121,7 +121,7 @@ class IngestService:
 
         try:
             while self._running:
-                # 1. Read 36-byte header
+                # 1. Read 40-byte header
                 header_bytes = self._recv_exact(client_sock, HEADER_SIZE)
                 if not header_bytes:
                     break

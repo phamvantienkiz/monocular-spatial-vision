@@ -61,11 +61,11 @@ $$T_{\text{cycle}} = T_{\text{grab}} + T_{\text{encode}}$$
 Thông lượng của hệ thống đa luồng sẽ được quyết định bởi nhịp của bộ phận chậm nhất (Pipeline Bottleneck):
 $$T_{\text{pipeline}} = \max\left(T_{\text{grab}}, \frac{T_{\text{encode}}}{N_{\text{workers}}}\right)$$
 
-- Với $N_{\text{workers}} = 2$ nhân CPU:
-  $$\frac{T_{\text{encode}}}{2} = \frac{59.35\text{ ms}}{2} \approx 29.6\text{ ms}$$
-- Thông lượng tổng thể:
-  $$T_{\text{pipeline}} = \max(35.1\text{ ms}, 29.6\text{ ms}) \approx 35.1\text{ ms} \longrightarrow \mathbf{28.5\text{ FPS}!}$$
-Chỉ bằng việc phân luồng đa nhân, hệ thống lập tức tăng tốc **gấp gần 3 lần** mà không cần thay đổi thuật toán!
+- Với $N_{\text{workers}} = 3$ luồng worker chạy song song (sử dụng `threading.local()` để mỗi luồng sở hữu 1 thực thể `TurboJPEG` riêng và giải phóng khóa GIL khi gọi xuống thư viện C `libturbojpeg`):
+  $$\frac{T_{\text{encode}}}{3} = \frac{55.0\text{ ms}}{3} \approx 18.3\text{ ms}$$
+- Kết hợp với `CAP_PROP_BUFFERSIZE = 4` (triệt tiêu hiện tượng rơi frame vào `dummy_buf` của `bcm2835-unicam`, đưa $T_{\text{grab}} \le 33.3\text{ ms}$) và tách riêng luồng `imu_poller` (50 Hz), thông lượng tổng thể đạt:
+  $$T_{\text{pipeline}} = \max(33.3\text{ ms}, 18.3\text{ ms}) = 33.3\text{ ms} \longrightarrow \mathbf{30.0\text{ FPS}!}$$
+Chỉ bằng việc phân luồng đa nhân đúng chuẩn Thread-Local `TurboJPEG` và cấp đủ 4 bộ đệm DMA, hệ thống lập tức tăng tốc **gấp 3 lần** (từ `9.8 FPS` lên `26 – 30 FPS`)!
 
 ---
 

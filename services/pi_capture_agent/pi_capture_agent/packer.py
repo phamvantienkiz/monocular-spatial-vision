@@ -1,6 +1,6 @@
 """Binary protocol packaging for monocular frame transmission.
 
-Format Specification (36 Bytes Header, Big-Endian '>HHIQffIIII'):
+Format Specification (40 Bytes Header, Big-Endian '>HHIQffIIII'):
 - magic: uint16 (0x5043, 'PC')
 - version: uint16 (1)
 - frame_id: uint32
@@ -8,20 +8,15 @@ Format Specification (36 Bytes Header, Big-Endian '>HHIQffIIII'):
 - pitch_deg: float32 (degrees)
 - roll_deg: float32 (degrees)
 - payload_len: uint32 (byte length of subsequent image)
-- width: uint32 (1280)
-- height: uint32 (720)
+- width: uint32 (1280 or 640)
+- height: uint32 (720 or 360)
 - reserved: uint32 (0x00000000)
-
-TODO for Students:
-- Use python 'struct' module to pack the 36-byte header.
-- Implement pack_frame(frame_id, timestamp_ns, pitch, roll, image_bytes) -> bytes.
-- Ensure strict adherence to Big-Endian byte ordering.
 """
 
 import struct
 
 HEADER_FORMAT = ">HHIQffIIII"
-HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # exactly 36 bytes
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # exactly 40 bytes
 MAGIC_NUMBER = 0x5043  # 'PC' in hex
 PROTOCOL_VERSION = 1
 

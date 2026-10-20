@@ -14,10 +14,12 @@ Trong quá trình thực nghiệm thực địa với camera Digilent Pcam 5C (O
 - **1 nhân CPU bị ép chạy 100%** công suất.
 - Hình ảnh truyền qua mạng Wi-Fi bị **trễ (delay) từ vài trăm ms đến vài giây**.
 
-Qua phân tích mã nguồn tại [`services/pi_capture_agent/`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/), nguyên nhân cốt lõi không nằm ở phần cứng camera hay I2C IMU, mà nằm ở **3 tác vụ tiền xử lý ảnh bằng CPU phần mềm đơn luồng**:
-1. Phép lật ma trận ảnh [`cv2.flip(frame, 0)`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py#L220) ngốn **8 – 15ms** CPU cho mỗi khung hình 720p.
-2. Thuật toán nén ảnh JPEG phần mềm mặc định [`cv2.imencode()`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py#L257) ngốn **45 – 65ms** CPU cho mỗi khung hình 720p.
-3. Việc nén mất 65ms khiến vòng lặp chỉ đạt tối đa $\approx 15\text{ FPS}$, tạo ra sự chênh lệch nhịp truyền dẫn khiến bộ đệm socket TCP bị dồn ứ (bufferbloat) trên sóng Wi-Fi.
+Qua phân tích mã nguồn tại [`services/pi_capture_agent/`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/) và nhật ký thực địa tại [`log_pi_3.md`](file:///E:/UIT/monocular-spatial-vision/docs/implementation/release-1/reports/log_pi_3.md), nguyên nhân gốc rễ khiến FPS tụt xuống **dưới 9.8 FPS** và gây giật lag/bóng mờ khi xem `--mode preview` bao gồm:
+1. **Đói bộ đệm DMA trong driver `bcm2835-unicam` (`CAP_PROP_BUFFERSIZE = 1`):** Đặt `BUFFERSIZE = 1` khiến driver `bcm2835-unicam` buộc phải đổ khung hình thứ 2 và thứ 3 vào `dummy_buf` nội bộ mỗi khi luồng Python đang bận nén ảnh, khóa cứng chu kỳ đọc ở $3 \times 33.3\text{ms} = 100\text{ms}$ (`9.8 FPS`). Cần tăng `buffer_size = 4`.
+2. **Màn trập tự động (Auto-Exposure) kéo dài trong nhà gây bóng mờ (Motion Blur):** Cảm biến OV5640 tự kéo dài thời gian phơi sáng lên $66–100\text{ms}$ trong ánh sáng phòng lab. Cần bật `gain_automatic=1`, `power_line_frequency=1` (50Hz) và hỗ trợ khóa trần phơi sáng (`--exposure`).
+3. **Phép lật ma trận ảnh bằng phần mềm [`cv2.flip(frame, 0)`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py)** ngốn **8 – 15ms** CPU cho mỗi khung hình 720p (và cần tái xác nhận `vertical_flip=1` sau khi OpenCV warmup `STREAMON`).
+4. **Nén JPEG đơn luồng & thiếu Thread-Local `TurboJPEG`:** Nén 1 khung hình 720p trên 1 nhân Cortex-A53 32-bit tốn **50 – 60ms**. Cần sử dụng `threading.local()` cho các thực thể `TurboJPEG` kết hợp nhóm luồng `encoder_worker` song song trên 4 nhân CPU (vì `ctypes` giải phóng hoàn toàn khóa GIL khi chạy C).
+5. **Dồn ứ bộ đệm TCP (`SO_SNDBUF`) & nghẽn đơn luồng trong `--mode preview`:** Luồng preview cũ vừa đọc camera, vừa đọc I2C IMU, vừa resize và nén JPEG trên cùng 1 luồng, cộng thêm `SO_SNDBUF` không giới hạn gây trễ hình 1–3 giây trên Wi-Fi. Cần tách thành 3 miền luồng độc lập (`v4l2_grabber`, `imu_poller`, `preview_encoder`) kèm `SO_SNDBUF = 32 KB` và decimation `2x2` (`np.ascontiguousarray(frame[::2, ::2])`).
 
 ---
 
@@ -61,6 +63,6 @@ flowchart TD
 
 ## 4. Nguyên Tắc Thiết Kế Cốt Lõi
 
-1. **Zero-Breaking Changes cho Backend:** Mọi giải pháp xuất ra payload hình ảnh vẫn giữ nguyên định dạng chuẩn JPEG và cấu trúc 36-byte Binary Header. Backend trên Laptop/Jetson tiếp nhận bình thường mà không cần sửa đổi dù chỉ 1 dòng code.
-2. **Graceful Fallback:** Nếu phần cứng không hỗ trợ hoặc thiếu thư viện mở rộng, code tự động lùi về pipeline tiêu chuẩn (OpenCV) có ghi log cảnh báo, không làm crash tiến trình.
+1. **Zero-Breaking Changes cho Backend & Tương Thích Đối Chuẩn C/C++ (`release-1c`):** Mọi giải pháp xuất ra payload hình ảnh vẫn giữ nguyên định dạng chuẩn JPEG và cấu trúc **40-byte Binary Header (`>HHIQffIIII`)**. Backend trên Laptop/Jetson tiếp nhận đồng nhất từ cả bản Python (`release-1`) lẫn bản C/C++ (`release-1c`) qua cả Wi-Fi và cáp Ethernet (Hub Type-C / Jetson LAN) mà không cần sửa đổi dù chỉ 1 dòng code.
+2. **Graceful Fallback:** Nếu phần cứng không hỗ trợ hoặc thiếu thư viện mở rộng, code tự động lùi về pipeline tiêu chuẩn (OpenCV) có ghi log cảnh báo rõ ràng (`logger.warning`), không làm crash tiến trình.
 3. **Environment Isolation:** Mọi phụ thuộc mới đều được quản lý biệt lập trong virtual environment `.venv` theo đúng quy định tại [AGENTS.md](file:///E:/UIT/monocular-spatial-vision/AGENTS.md).

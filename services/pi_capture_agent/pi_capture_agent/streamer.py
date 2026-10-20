@@ -1,6 +1,6 @@
 """TCP client network streamer with auto-reconnect backoff logic.
 
-Guarantees robust transmission of 36-byte binary header + JPEG image packets
+Guarantees robust transmission of 40-byte binary header + JPEG image packets
 over TCP sockets to the Ingest Server (on Developer Laptop or Jetson AGX Xavier).
 """
 
@@ -50,6 +50,11 @@ class SocketStreamer:
             # TCP_NODELAY disables Nagle algorithm to minimize per-packet video latency
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            # Bound TCP send buffer (128 KB) to prevent multi-second kernel bufferbloat over slow Wi-Fi
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 131072)
+            except Exception:
+                pass
             sock.settimeout(3.0)
 
             sock.connect((self.host, self.port))

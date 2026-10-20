@@ -33,7 +33,7 @@ flowchart LR
         direction TB
         HW_CAM["OV5640 CSI-2 Camera<br/>(1280x720 @ 30 FPS)"]
         HW_IMU["MPU-6050 IMU<br/>(I2C Bus 1 @ 50 Hz)"]
-        PACKER["BinaryFramePacker<br/>(Header 36B + JPEG Payload)"]
+        PACKER["BinaryFramePacker<br/>(Header 40B + JPEG Payload)"]
         STREAMER["SocketStreamer<br/>(TCP Client, TCP_NODELAY)"]
 
         HW_CAM --> PACKER
@@ -74,7 +74,7 @@ flowchart LR
 | Tiêu chí | Raspberry Pi 3 (Capture Node) | Laptop / Jetson (Compute Host) |
 | :--- | :--- | :--- |
 | **Phần cứng sử dụng** | ARM Cortex-A53 @ 1.4 GHz (1GB RAM) | Intel/AMD đa nhân + NVIDIA GPU |
-| **Tác vụ đảm nhiệm** | - Đọc DMA Unicam V4L2 từ camera<br/>- Đọc góc Pitch/Roll từ I2C IMU<br/>- Đóng gói nhị phân 36 bytes<br/>- Bắn gói tin qua TCP Socket | - Nhận gói tin từ TCP Socket<br/>- Giải mã ảnh JPEG bằng đa nhân CPU/GPU<br/>- Cung cấp Web HUD cho người vận hành<br/>- *(Release 2)* Chạy suy luận YOLO + BBox 3D |
+| **Tác vụ đảm nhiệm** | - Đọc DMA Unicam V4L2 từ camera (`buffer_size=4`)<br/>- Đọc góc Pitch/Roll từ I2C IMU (tách luồng riêng)<br/>- Nén JPEG đa nhân (3 Thread-Local Workers) & đóng gói 40 bytes<br/>- Bắn gói tin qua TCP Socket | - Nhận gói tin từ TCP Socket<br/>- Giải mã ảnh JPEG bằng đa nhân CPU/GPU<br/>- Cung cấp Web HUD cho người vận hành<br/>- *(Release 2)* Chạy suy luận YOLO + BBox 3D |
 | **Tải CPU ước tính** | **~10% – 15%** (Chủ yếu là I/O mạng) | **~5% – 10%** của Laptop hiện đại |
 | **Tốc độ khung hình** | Đạt cực đại của cảm biến (**25 – 30 FPS**) | Đồng bộ tức thời theo luồng nhận được |
 | **Độ trễ truyền dẫn** | $< 2\text{ms}$ qua dây cáp Ethernet LAN | Hiển thị tức thời trên trình duyệt |
@@ -108,14 +108,14 @@ Thay vì hardcode IP máy tính vào file cấu hình `configs/capture_pi.yaml`:
 
 ### 3.3. Bảng so sánh 2 chế độ vận hành (Dual Operating Modes)
 
-| Đặc tính | Chế độ 1: Wi-Fi Diagnostic Preview (`--mode preview`) | Chế độ 2: Ethernet High-Throughput Stream (`--mode stream`) |
+| Đặc tính | Chế độ 1: Wi-Fi Diagnostic Preview (`--mode preview`) | Chế độ 2: Wi-Fi / Ethernet Binary Stream (`--mode stream`) |
 | :--- | :--- | :--- |
-| **Mục đích** | Kiểm tra nhanh camera & góc nghiêng IMU khi cầm robot đi lại | Thu thập dữ liệu thực tế & cấp luồng cho Jetson/Laptop xử lý |
-| **Đường truyền** | Mạng Wi-Fi không dây | Cáp mạng có dây Ethernet (Hub Type-C / Switch) |
-| **Độ phân giải** | Thu nhỏ $640 \times 360$ (nHD), JPEG Q=65 | Độ phân giải gốc $1280 \times 720$ (HD), JPEG Q=80 |
-| **Tốc độ (FPS)** | ~14.5 – 18 FPS (Do Pi tự nén phần mềm cho Web) | **25 – 30 FPS mượt mà** (Pi chỉ đóng gói nhị phân đẩy đi) |
+| **Mục đích** | Kiểm tra nhanh camera & góc nghiêng IMU trực tiếp trên trình duyệt Laptop | Thu thập dữ liệu thực tế & cấp luồng cho Jetson/Laptop xử lý + Benchmark với C/C++ |
+| **Đường truyền** | Mạng Wi-Fi không dây (hoặc Ethernet) | Cáp mạng Ethernet (Hub Type-C / Jetson LAN) hoặc Wi-Fi |
+| **Độ phân giải** | Thu nhỏ $640 \times 360$ (`2x2` strided decimation), JPEG Q=65 | Độ phân giải gốc $1280 \times 720$ (HD) hoặc $640 \times 360$, JPEG Q=70 |
+| **Tốc độ (FPS)** | **25 – 30 FPS thời gian thực** (Tách 3 luồng + `SO_SNDBUF=32KB`) | **26 – 30 FPS mượt mà** (4-stage pipeline, 3 Thread-Local Workers) |
 | **Lệnh chạy Pi** | `python -m pi_capture_agent.cli --mode preview --preview-port 8080` | `python -m pi_capture_agent.cli --mode stream --host <IP_HOST> --port 9876` |
-| **Phía Laptop** | Chỉ mở trình duyệt truy cập `http://<pi_wifi_ip>:8080` | Chạy Backend Ingest Server, mở Web HUD `http://localhost:8000/hud` |
+| **Phía Laptop** | Chỉ mở trình duyệt truy cập `http://<pi_ip>:8080` | Chạy `mock_ingest_server.py` hoặc Backend Ingest Server (`http://localhost:8000/hud`) |
 
 ---
 
@@ -140,7 +140,7 @@ sequenceDiagram
     Note over USER,PI: Bước 3: Khởi động luồng truyền từ Pi 3
     USER->>PI: python -m pi_capture_agent.cli --mode stream --host <IP_ETHERNET> --port 9876
     PI->>PC: Kết nối TCP Socket tới Port 9876 (TCP_NODELAY)
-    PI->>PC: Bắn luồng liên tục: Header 36B + Khung hình 720p + IMU
+    PI->>PC: Bắn luồng liên tục: Header 40B + Khung hình 720p + IMU
 
     Note over PC: Bước 4: Quan sát trên Web HUD Laptop
     USER->>PC: Mở trình duyệt: http://localhost:8000/hud
@@ -203,7 +203,7 @@ Khi mô hình truyền nhận qua cáp Ethernet giữa Pi 3 và Laptop đã ho�
      │   └─ Trích xuất Bounding Box 2D và điểm tiếp xúc đáy (Bottom-center pixel).
      │
      ├─ Bước 2.2: Bù trừ góc nghiêng động (Dynamic Tilt Compensation)
-     │   └─ Sử dụng chính xác góc Pitch (θ) và Roll (φ) từ Header 36B nhận được.
+     │   └─ Sử dụng chính xác góc Pitch (θ) và Roll (φ) từ Header 40B nhận được.
      │   └─ Tính toán cự ly chiều sâu trục Z và vị trí không gian 3D (X, Y, Z) qua hình học IPM.
      │
      ├─ Bước 2.3: Trực quan hóa Bounding Box 3D trên Web HUD Laptop

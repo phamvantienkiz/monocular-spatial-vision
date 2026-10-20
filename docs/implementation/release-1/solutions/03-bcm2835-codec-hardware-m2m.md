@@ -63,7 +63,7 @@ flowchart LR
 | **Tương thích Backend hiện tại** | **Tương thích 100% ngay lập tức** (Laptop/Jetson gọi `cv2.imdecode` bình thường) | **Cần bổ sung module giải mã H.264** trên Laptop/Jetson (dùng PyAV / FFmpeg / NVDEC) |
 
 👉 **Khuyến nghị chiến lược cho dự án:**
-- **Bước ưu tiên:** Triển khai chế độ **Hardware MJPEG** trước. Chế độ này giữ nguyên vẹn 100% giao thức Binary Header 36-byte hiện tại và tầng Ingest Service trên Laptop/Jetson, trong khi vẫn giảm tải CPU của Pi 3 xuống dưới 10%!
+- **Bước ưu tiên:** Triển khai chế độ **Hardware MJPEG** hoặc **Multi-Core Thread-Local PyTurboJPEG (3 Workers)** trước. Chế độ này giữ nguyên vẹn 100% giao thức Binary Header 40-byte (`>HHIQffIIII`) hiện tại và tầng Ingest Service trên Laptop/Jetson, trong khi vẫn giải phóng tải CPU của Pi 3!
 - **Bước mở rộng (Khi cần tối ưu tuyệt đối cho Wi-Fi yếu):** Chuyển sang **Hardware H.264**, bổ sung codec H.264 vào `IngestService`.
 
 ---

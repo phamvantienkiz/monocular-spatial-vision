@@ -64,46 +64,24 @@ v4l2-ctl -d /dev/v4l-subdev0 --set-ctrl=vertical_flip=1
 v4l2-ctl -d /dev/video0 -c vertical_flip=1
 ```
 
-### 3.2. Tích hợp trực tiếp vào mã nguồn `camera.py`
-Trong lớp `CameraDriver`, ta bổ sung phương thức thiết lập V4L2 control và đánh dấu cờ `_hw_vflip_applied`:
+### 3.2. Tích hợp trực tiếp vào mã nguồn `camera.py` (Kèm chống trôi thanh ghi & chống bóng mờ)
+Trong lớp [`CameraDriver`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py), có **3 lưu ý sống còn** với driver `bcm2835-unicam` và `ov5640`:
+1. **Cấp phát đủ 4 bộ đệm V4L2 DMA (`CAP_PROP_BUFFERSIZE = 4.0`):** Tuyệt đối không đặt `CAP_PROP_BUFFERSIZE = 1.0`. Với `BUFFERSIZE = 1`, driver `bcm2835-unicam` không có buffer dự phòng (`next_frm`) khi ngắt VSYNC xảy ra lúc ứng dụng đang giữ buffer, dẫn đến việc đổ khung hình vào `dummy_buf` và làm tụt tốc độ grab xuống `41.29 ms` (`9.8 FPS`).
+2. **Tái xác nhận `vertical_flip=1` sau khi OpenCV warmup (`VIDIOC_STREAMON`):** Khi `cv2.VideoCapture` gọi `STREAMON` ở khung hình đầu tiên, driver `ov5640` nạp lại bảng thanh ghi mode $1280 \times 720$ và có thể ghi đè thanh ghi `0x3820`. Do đó, `CameraDriver.open()` thực hiện tái áp dụng `_apply_hardware_flip()` ngay sau vòng lặp warmup.
+3. **Chống bóng mờ (Motion Blur) trong nhà bằng kiểm soát phơi sáng (`_configure_sensor_exposure()`):** Tự động bật `gain_automatic=1`, bộ lọc tần số điện lưới `power_line_frequency=1` (50Hz), và cho phép giới hạn thời gian mở màn trập qua tham số `--exposure <lines>` (ví dụ `400`) để ngăn OV5640 kéo dài màn trập lên $66–100\text{ ms}$ gây nhòe ảnh khi di chuyển.
 
 ```python
-def _apply_hardware_flip(self) -> bool:
-    """Configures hardware-level vertical flip directly on the OV5640 sensor."""
-    if not self.vflip or self.mock_mode:
-        return False
+# Trong CameraDriver.open():
+self._cap.set(cv2.CAP_PROP_BUFFERSIZE, float(max(2, self.buffer_size)))  # Mặc định buffer_size = 4
+self._configure_sensor_exposure()
+if self.use_hardware_flip:
+    self._hw_vflip_applied = self._apply_hardware_flip()
 
-    import subprocess
-    import glob
-
-    # 1. Thử set trực tiếp qua OpenCV VideoCapture backend
-    try:
-        import cv2
-        # Một số backend V4L2 hỗ trợ set control qua mã định danh
-        # V4L2_CID_VFLIP = 0x00980914 (base 0x00980900 + 20)
-        if self._cap is not None:
-            if self._cap.set(cv2.CAP_PROP_RECTIFICATION, 1.0):
-                logger.info("Applied hardware flip via OpenCV property")
-    except Exception:
-        pass
-
-    # 2. Thử set qua v4l2-ctl trên subdevice OV5640 và node video
-    for dev in sorted(glob.glob("/dev/v4l-subdev*")) + [self.device]:
-        try:
-            res = subprocess.run(
-                ["v4l2-ctl", "-d", dev, "--set-ctrl=vertical_flip=1"],
-                capture_output=True,
-                text=True,
-                timeout=1,
-            )
-            if res.returncode == 0:
-                logger.info("Hardware vertical flip enabled successfully on %s", dev)
-                return True
-        except Exception:
-            continue
-
-    logger.info("Hardware flip control not accessible on V4L2 subdevice; using fallback.")
-    return False
+# Sau khi đọc 2 frame warmup để kích hoạt VIDIOC_STREAMON:
+for _ in range(2):
+    self._cap.grab()
+if self.use_hardware_flip and self.vflip:
+    self._hw_vflip_applied = self._apply_hardware_flip()
 ```
 
 Trong phương thức `read_raw()`:
