@@ -425,8 +425,11 @@ def run_preview_server(
         t.start()
 
     class PreviewHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def log_message(self, format, *args):
-            pass  # Suppress HTTP access noise
+            if args and len(args) > 1 and str(args[1]).startswith(("4", "5")):
+                logger.warning("HTTP %s: %s", args[1], args[0])
 
         def do_GET(self):
             if self.path in ("/", "/preview", "/preview/"):
@@ -482,8 +485,29 @@ def run_preview_server(
     </div>
     <script>
         const img = document.getElementById('live-img');
+        let fallbackActive = false;
+        let pollInFlight = false;
+
+        function startSnapshotPolling() {
+            if (fallbackActive) return;
+            fallbackActive = true;
+            setInterval(() => {
+                if (pollInFlight) return;
+                pollInFlight = true;
+                const nextImg = new Image();
+                nextImg.onload = () => {
+                    img.src = nextImg.src;
+                    pollInFlight = false;
+                };
+                nextImg.onerror = () => {
+                    pollInFlight = false;
+                };
+                nextImg.src = '/snapshot.jpg?t=' + Date.now();
+            }, 66);
+        }
+
         img.onerror = () => {
-            setTimeout(() => { img.src = '/stream.mjpg?t=' + Date.now(); }, 1000);
+            startSnapshotPolling();
         };
 
         let inFlight = false;
@@ -515,18 +539,13 @@ def run_preview_server(
             elif self.path.startswith("/stream.mjpg"):
                 try:
                     self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    try:
-                        # Bound TCP send buffer to 32 KB (~2 preview JPEGs) to prevent Wi-Fi bufferbloat lag
-                        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32768)
-                    except OSError:
-                        pass
 
                     self.send_response(200)
                     self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
                     self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                     self.send_header("Pragma", "no-cache")
                     self.send_header("Expires", "0")
-                    self.send_header("Connection", "close")
+                    self.send_header("Connection", "keep-alive")
                     self.end_headers()
 
                     last_id = -1
@@ -542,12 +561,11 @@ def run_preview_server(
                         if jpeg_bytes is None:
                             continue
 
-                        header = (
-                            b"--frame\r\n"
-                            b"Content-Type: image/jpeg\r\n"
-                            b"Content-Length: " + str(len(jpeg_bytes)).encode("ascii") + b"\r\n\r\n"
+                        self.wfile.write(
+                            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                            + jpeg_bytes
+                            + b"\r\n"
                         )
-                        self.wfile.write(header + jpeg_bytes + b"\r\n")
                         self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     pass
@@ -1245,6 +1263,7 @@ def main() -> None:
             use_hardware_flip=use_hw_flip,
             buffer_size=buffer_size,
             exposure=exposure,
+            num_workers=num_workers,
         )
     elif args.mode == "test-perf":
         run_test_perf(
