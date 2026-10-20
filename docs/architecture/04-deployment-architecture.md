@@ -26,10 +26,17 @@ flowchart LR
         PC["Laptop / Dev PC (RViz2)<br/>IP: 192.168.1.100"]
     end
 
-    PI3 <-->|100 Mbps Eth| SW
+    PI3 <-->|"100 Mbps Eth (Jetson / Laptop USB Type-C Hub)\nhoặc Wi-Fi 802.11n (Laptop Test)"| SW
     JET <-->|1000 Mbps Eth| SW
-    PC <-->|WiFi / 1000 Mbps Eth| SW
+    PC <-->|"Wi-Fi (--mode preview/stream)\nhoặc USB Type-C to Ethernet Hub"| SW
 ```
+
+### 1.1. Dual-Mode Network Transport Invariant (Wi-Fi & Wired Ethernet)
+Cả phiên bản Python (`services/pi_capture_agent/`) lẫn phiên bản C/C++ (`services/pi_capture_agent_cpp/`) trên Raspberry Pi 3 đều **bắt buộc duy trì đồng thời 2 giao thức truyền dẫn vật lý và cách thức kiểm thử**:
+1. **Wi-Fi (`wlan0`):** Phục vụ kiểm thử không dây tiện lợi với Laptop qua cả chế độ xem trực tiếp trên trình duyệt (`--mode preview`, cổng HTTP `8080`) và chế độ truyền luồng nhị phân (`--mode stream`, cổng TCP `9876`).
+2. **Cổng Ethernet (`eth0`):**
+   - **Kiểm thử có dây với Laptop:** Kết nối cáp RJ45 từ Pi 3 qua **Hub chuyển đổi USB Type-C sang Ethernet** cắm vào Laptop (hỗ trợ Zero-Friction Networking qua dải IP Link-Local APIPA `169.254.x.x`, mDNS `raspberrypi.local`, hoặc `--host <IP>` động mà không ép đổi Static IP của Laptop).
+   - **Tích hợp thực tế trên Robot:** Kết nối cáp RJ45 từ Pi 3 trực tiếp sang cổng Ethernet của **Jetson AGX Xavier (`192.168.1.20:9876`)**.
 
 ---
 

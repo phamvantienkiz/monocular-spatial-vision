@@ -5,32 +5,41 @@
 
 ---
 
-## 1. Network Streaming Binary Frame Header
+## 1. Network Streaming Binary Frame Header (40-Byte Wire Format `>HHIQffIIII`)
 
-Mọi khung hình truyền từ Raspberry Pi 3 sang Jetson AGX Xavier đều được đóng gói theo cấu trúc nhị phân cố định (Big-Endian network byte order):
+Mọi khung hình truyền từ Raspberry Pi 3 (`services/pi_capture_agent/` bản Python hoặc `services/pi_capture_agent_cpp/` bản C++17) sang Laptop / Jetson AGX Xavier đều được đóng gói theo cấu trúc nhị phân cố định **40 bytes** (Big-Endian network byte order, định dạng `struct` chuẩn `>HHIQffIIII`):
 
 ```
 +--------------------------------------------------------------------------------+
-| MAGIC (2B)  | VERSION (2B) | TIMESTAMP_NS (8B)           | FRAME_ID (4B)       |
-| 0x50 0x43   | 0x00 0x01    | int64 nanoseconds           | uint32 sequence num |
+| Offset 0..1:  MAGIC (2B, uint16)      | Offset 2..3:  VERSION (2B, uint16)     |
+|               0x50 0x43 ('P', 'C')    |               0x00 0x01 (v1)           |
 +--------------------------------------------------------------------------------+
-| PITCH_DEG (4B)             | ROLL_DEG (4B)               | CAM_HEIGHT_MM (4B)  |
-| float32 IEEE 754           | float32 IEEE 754            | uint32 millimeter   |
+| Offset 4..7:  FRAME_ID (4B, uint32)                                            |
+|               Monotonically increasing frame sequence number                   |
 +--------------------------------------------------------------------------------+
-| IMAGE_WIDTH (2B)           | IMAGE_HEIGHT (2B)           | IMAGE_FORMAT (2B)   |
-| uint16 (e.g. 1280)         | uint16 (e.g. 720)           | 0x01: RAW, 0x02: JPG|
+| Offset 8..15: TIMESTAMP_NS (8B, uint64)                                        |
+|               Capture hardware timestamp in nanoseconds                        |
 +--------------------------------------------------------------------------------+
-| PAYLOAD_LENGTH (4B)                                      | RESERVED (4B)       |
-| uint32 byte size of image                                | 0x00000000          |
+| Offset 16..19: PITCH_DEG (4B, float32)| Offset 20..23: ROLL_DEG (4B, float32)  |
+|                IEEE 754 Big-Endian    |                IEEE 754 Big-Endian     |
 +--------------------------------------------------------------------------------+
-| PAYLOAD: IMAGE BYTES (Compressed JPEG / H.264 / Raw YUV)                       |
-| [Length defined by PAYLOAD_LENGTH]                                             |
+| Offset 24..27: PAYLOAD_LEN (4B, uint32)                                        |
+|                Exact byte length of the following JPEG payload                 |
++--------------------------------------------------------------------------------+
+| Offset 28..31: WIDTH (4B, uint32)     | Offset 32..35: HEIGHT (4B, uint32)     |
+|                e.g. 1280 (or 640)     |                e.g. 720 (or 360)       |
++--------------------------------------------------------------------------------+
+| Offset 36..39: RESERVED (4B, uint32)                                           |
+|                0x00000000 (Alignment & future flags)                           |
++--------------------------------------------------------------------------------+
+| Offset 40..40+PAYLOAD_LEN: PAYLOAD (Compressed JPEG Image Bytes)               |
 +--------------------------------------------------------------------------------+
 ```
 
-### Invariant:
-- `MAGIC`: Giá trị cố định `0x5043` ("PC" - Pcam).
-- `TIMESTAMP_NS`: Thời điểm phần cứng chụp khung hình tính bằng nanosecond từ mốc epoch chuẩn (`CLOCK_MONOTONIC_RAW`).
+### Invariants:
+- **Tổng kích thước Header:** Chính xác **40 bytes** (`sizeof(PackedFrameHeader) == 40`, `struct.calcsize(">HHIQffIIII") == 40`).
+- **`MAGIC`:** Giá trị cố định `0x5043` (`"PC"` - Pcam).
+- **Truyền nguyên tử (Atomic Frame Transmission):** Một khi đã gửi byte đầu tiên của Header 40-byte trên kết nối TCP, bên gửi bắt buộc phải truyền đủ `40 + PAYLOAD_LEN` bytes trước khi gửi khung hình kế tiếp để không bao giờ làm lệch pha bộ đọc phía Ingest Server.
 
 ---
 

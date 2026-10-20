@@ -2,136 +2,148 @@
 
 > **Layer:** Implementation Layer (`docs/implementation/release-1c/migration.md`)  
 > **Release:** Release 1c (C/C++ Native Edge Capture & Perception Pipeline)  
-> **Status:** Approved Baseline  
+> **Status:** Approved Baseline (Audited & Revised)  
 
 ---
 
 ## 1. Thiết Lập Môi Trường Cô Lập Tuyệt Đối (Zero System Pollution)
 
-Tuân thủ nghiêm ngặt quy định tại [AGENTS.md](file:///E:/UIT/monocular-spatial-vision/AGENTS.md), không cài đặt bất kỳ thư viện C++ nào vào môi trường toàn cục của hệ điều hành (`/usr/local/`, `/usr/lib/`). Toàn bộ quy trình cài đặt và biên dịch được đóng gói khép kín trong không gian làm việc của repository.
+Tuân thủ nghiêm ngặt quy định tại [`AGENTS.md`](file:///E:/UIT/monocular-spatial-vision/AGENTS.md), dự án **tuyệt đối không cài đặt thư viện C++ vào `/usr/local/` và không tự ý sửa đổi các tệp cấu hình toàn cục của hệ điều hành** (như `/etc/dphys-swapfile`). Toàn bộ công cụ quản lý gói và sản phẩm biên dịch được đóng gói khép kín bên trong không gian làm việc của repository.
 
-### 1.1. Bước 1: Mở Rộng Bộ Nhớ Swap Trên Raspberry Pi 3 (Bắt Buộc)
+### 1.1. Bước 1: Kiểm Tra Quyền Truy Cập Phần Cứng & Bộ Nhớ Trên Raspberry Pi 3
 
-Do Pi 3 chỉ có đúng $1\text{GB}$ RAM vật lý, việc biên dịch mã nguồn C++ và nạp các mẫu template phức tạp rất dễ gây cạn kiệt RAM làm Linux kernel kích hoạt OOM Killer gây treo máy. Cần thiết lập Swap tối thiểu $2048\text{MB}$:
+Đảm bảo tài khoản người dùng (`pi` hoặc `r3b`) thuộc nhóm `video` và `i2c`, đồng thời kiểm tra nhanh dung lượng RAM/Swap khả dụng:
 
 ```bash
-# 1. Chỉnh sửa cấu hình dphys-swapfile
-sudo nano /etc/dphys-swapfile
+# 1. Kiểm tra nhóm quyền phần cứng (video, i2c)
+groups
+# Nếu chưa có video và i2c: sudo usermod -aG video,i2c $USER (sau đó đăng nhập lại)
 
-# 2. Thay đổi giá trị thành:
-# CONF_SWAPSIZE=2048
+# 2. Kiểm tra các công cụ biên dịch cơ bản của hệ thống (gcc, g++, cmake, media-ctl, v4l2-ctl)
+g++ --version
+cmake --version
+v4l2-ctl --version
+media-ctl -h | head -n 3
 
-# 3. Khởi động lại dịch vụ swap
-sudo systemctl restart dphys-swapfile
-
-# 4. Kiểm tra lại dung lượng swap sẵn sàng
+# 3. Kiểm tra RAM và Swap hiện có (Không cần sửa /etc/dphys-swapfile nếu Swap đã có sẵn ~1GB)
 free -h
-# Swap: total 2.0Gi
 ```
 
 ---
 
-### 1.2. Bước 2: Thiết Lập Quyền Truy Cập Phần Cứng Không Cần Sudo
+### 1.2. Bước 2: Khởi Tạo Môi Trường Ảo Bằng `uv` & Cài Đặt Conan 2.0 Cục Bộ
 
-Đảm bảo tài khoản người dùng (`pi` hoặc `r3b`) có quyền truy cập trực tiếp các node thiết bị V4L2 và I2C:
-
-```bash
-# Thêm user vào nhóm video và i2c
-sudo usermod -aG video,i2c $USER
-
-# Kích hoạt I2C nếu chưa bật
-sudo raspi-config nonint do_i2c 0
-
-# Đăng xuất và đăng nhập lại để quyền có hiệu lực
-exit
-```
-
----
-
-### 1.3. Bước 3: Khởi Tạo Môi Trường Ảo Bằng `uv` & Cài Đặt Conan 2.0
-
-Chúng ta tận dụng chính môi trường ảo `.venv` của Python (được tạo bởi `uv`) để làm vỏ bọc quản lý công cụ `conan` cho C++:
+Chúng ta tận dụng môi trường ảo `.venv` tại thư mục gốc của dự án (được tạo bởi `uv`) để cài đặt công cụ `conan` mà không chạm tới Python hệ thống:
 
 ```bash
 # Di chuyển vào thư mục gốc của dự án
 cd ~/workspaces/monocular-spatial-vision
 
-# Khởi tạo môi trường ảo biệt lập bằng uv
-uv venv
+# Khởi tạo môi trường ảo biệt lập bằng uv (nếu chưa tạo)
+uv venv .venv
 
-# Cài đặt Conan 2.0 trực tiếp vào .venv (hoàn toàn không đụng tới Python global)
+# Cài đặt Conan 2.0 trực tiếp vào .venv
 uv pip install conan
 
-# Kích hoạt môi trường
+# Kích hoạt môi trường ảo
 source .venv/bin/activate
 
-# Kiểm tra phiên bản conan
-uv run conan --version
-# Conan version 2.x.x
+# Kiểm tra đường dẫn và phiên bản conan
+which conan
+conan --version
 ```
 
 ---
 
-### 1.4. Bước 4: Cấu Hình Cache Cục Bộ `CONAN_HOME` & Profile Phần Cứng
+### 1.3. Bước 3: Cấu Hình Cache Cục Bộ `CONAN_HOME` & Giới Hạn Luồng Biên Dịch
 
-Conan mặc định sẽ lưu cache tại `~/.conan2` (thư mục User). Để cô lập $100\%$ trong workspace của dự án:
+Mặc định Conan lưu cache tại `~/.conan2`. Để cô lập $100\%$ trong workspace của dự án và tránh tràn RAM $1\text{GB}$ của Pi 3 khi biên dịch:
 
 ```bash
-# Đặt biến môi trường CONAN_HOME trỏ vào thư mục .conan ngay trong repo
+# 1. Đặt biến môi trường CONAN_HOME trỏ vào thư mục .conan ngay trong repo
 export CONAN_HOME="$(pwd)/.conan"
 
-# Tự động nhận diện cấu hình trình biên dịch của Raspberry Pi 3
-uv run conan profile detect --force
-```
+# 2. Tự động nhận diện cấu hình trình biên dịch của Raspberry Pi 3
+conan profile detect --force
 
-Tệp profile sinh ra tại `.conan/profiles/default` sẽ tự động xác định kiến trúc ARM (`armv7hf` cho hệ điều hành 32-bit hoặc `armv8`/`aarch64` cho hệ điều hành 64-bit) và phiên bản `gcc`/`g++` sẵn có trên máy.
+# 3. Giới hạn tối đa 2 luồng biên dịch trong Conan profile để bảo vệ RAM 1GB và thẻ nhớ microSD
+if ! grep -q "tools.build:jobs" "$CONAN_HOME/profiles/default"; then
+    printf "\n[conf]\ntools.build:jobs=2\n" >> "$CONAN_HOME/profiles/default"
+fi
+```
 
 ---
 
-### 1.5. Bước 5: Cài Đặt Phụ Thuộc C++ & Biên Dịch Dự Án
+### 1.4. Bước 4: Cài Đặt Phụ Thuộc C++ & Biên Dịch Trong `services/pi_capture_agent_cpp/`
+
+> [!IMPORTANT]
+> Tệp `conanfile.txt` và `CMakeLists.txt` nằm tại thư mục dịch vụ `services/pi_capture_agent_cpp/`. Mọi lệnh cài đặt phụ thuộc C++ và biên dịch CMake đều thực hiện tại thư mục này (ưu tiên tải binary có sẵn từ Conan Center trước khi biên dịch từ source):
 
 ```bash
-# 1. Đặt CONAN_HOME và cài đặt các phụ thuộc từ conanfile.txt
-export CONAN_HOME="$(pwd)/.conan"
-uv run conan install . --build=missing -s build_type=Release
+# 1. Di chuyển vào thư mục dịch vụ C++
+cd ~/workspaces/monocular-spatial-vision/services/pi_capture_agent_cpp
 
-# 2. Sinh cấu hình CMake sử dụng toolchain do Conan tạo ra
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+# 2. Cài đặt phụ thuộc từ conanfile.txt vào thư mục build/
+conan install . --output-folder=build --build=missing -s build_type=Release
 
-# 3. Biên dịch chương trình (RẤT QUAN TRỌNG: Chỉ dùng tối đa -j2 để tránh tràn RAM)
+# 3. Cấu hình CMake sử dụng toolchain do Conan sinh ra (Hỗ trợ CMake >= 3.18)
+cmake -B build \
+  -DCMAKE_TOOLCHAIN_FILE=build/build/Release/generators/conan_toolchain.cmake \
+  -DCMAKE_BUILD_TYPE=Release
+
+# 4. Biên dịch chương trình với giới hạn 2 luồng (-j2) để an toàn bộ nhớ
 cmake --build build -j2
 
-# 4. Kiểm tra file thực thi đã sinh ra
+# 5. Kiểm tra file thực thi đã sinh ra
 ls -lh build/bin/pi_capture_agent_cpp
 ```
 
 ---
 
-## 2. Bảng Kiểm Tra Xác Minh Không Ô Nhiễm Hệ Thống (Zero-Pollution Audit)
+## 2. Hướng Dẫn Vận Hành Cả 2 Phương Thức: Wi-Fi & Cáp Ethernet (Laptop Hub Type-C / Jetson)
 
-Trước khi nghiệm thu bất kỳ thay đổi nào, kỹ sư thực hiện lệnh kiểm tra sau để chứng minh tính cô lập tuyệt đối:
+Phiên bản C++ giữ nguyên hoàn toàn 6 chế độ CLI và 2 phương thức mạng như bản Python để kỹ sư thuận tiện kiểm thử:
 
+### 2.1. Kiểm Tra Nhanh Phần Cứng & Cảm Biến Tại Chỗ (`diag`, `snapshot`, `test-imu`, `test-perf`)
 ```bash
-# 1. Kiểm tra các thư mục sinh ra có nằm trọn trong repo không:
-ls -d .venv .conan build
+# 1. Chẩn đoán tổng thể I2C MPU6050 + Media-ctl + V4L2 OV5640
+./build/bin/pi_capture_agent_cpp --mode diag
 
-# 2. Kiểm tra thư mục hệ thống /usr/local không bị thêm file lạ:
-ls -lt /usr/local/bin | head -n 5
-ls -lt /usr/local/lib | head -n 5
+# 2. Chụp 1 bức ảnh 1280x720 kiểm tra độ nét
+./build/bin/pi_capture_agent_cpp --mode snapshot --output ./test_720p.jpg
 
-# 3. Khi muốn dọn dẹp sạch sẽ 100%:
-rm -rf .venv .conan build
-# -> Máy tính trở về trạng thái nguyên bản sạch sẽ ban đầu!
-```
+# 3. Kiểm tra góc nghiêng Pitch/Roll 50Hz từ IMU MPU6050
+./build/bin/pi_capture_agent_cpp --mode test-imu
 
----
-
-## 3. Quy Trình Chạy Thử Nghiệm Nhanh
-
-```bash
-# Chạy thử nghiệm chế độ đo hiệu năng 100 frames
+# 4. Đo đạc benchmark hiệu năng 100 khung hình
 ./build/bin/pi_capture_agent_cpp --mode test-perf --frames 100
-
-# Chạy thử nghiệm chế độ phát stream sang máy tính Developer (Laptop / Jetson)
-./build/bin/pi_capture_agent_cpp --mode stream --host 192.168.1.100 --port 9876
 ```
+
+### 2.2. Phương Thức 1: Sử Dụng Mạng Wi-Fi Để Test Nhanh Với Laptop (`preview` & `stream`)
+1. **Xem trực tiếp trên trình duyệt Laptop qua Wi-Fi (`--mode preview`):**
+   - Trên Pi 3:
+     ```bash
+     ./build/bin/pi_capture_agent_cpp --mode preview --preview-port 8080
+     ```
+   - Trên Laptop (cùng mạng Wi-Fi): Mở trình duyệt truy cập `http://<IP_WIFI_PI3>:8080/preview` để quan sát trực tiếp video MJPEG + góc nghiêng IMU và căn chỉnh tiêu cự ống kính.
+2. **Truyền luồng nhị phân qua Wi-Fi về Laptop (`--mode stream`):**
+   - Trên Laptop: Chạy `uv run python scripts/mock_ingest_server.py --host 0.0.0.0 --port 9876` (hoặc chạy FastAPI Backend `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`).
+   - Trên Pi 3:
+     ```bash
+     ./build/bin/pi_capture_agent_cpp --mode stream --host <IP_WIFI_LAPTOP> --port 9876
+     ```
+
+### 2.3. Phương Thức 2: Sử Dụng Cáp Ethernet Qua Hub Chuyển Đổi Type-C (Với Laptop) Hoặc Cắm Trực Tiếp Vào Jetson AGX Xavier
+1. **Khi test với Laptop qua dây mạng Ethernet + Hub Type-C (Không cần gán IP tĩnh):**
+   - Cắm cáp mạng Ethernet nối từ cổng RJ45 của Pi 3 vào Hub chuyển đổi Type-C trên Laptop.
+   - Trên Laptop, chạy `ipconfig` (Windows) hoặc `ip a` (Linux) để xem địa chỉ IPv4 của card mạng Ethernet thuộc Hub Type-C (ví dụ địa chỉ tự cấu hình APIPA `169.254.x.x` hoặc `192.168.x.x`).
+   - Khởi động bộ nhận trên Laptop (`mock_ingest_server.py` hoặc FastAPI Backend trên cổng `9876`).
+   - Trên Pi 3 (vẫn điều khiển qua SSH Wi-Fi), chạy lệnh truyền luồng qua đường dây cáp Ethernet:
+     ```bash
+     ./build/bin/pi_capture_agent_cpp --mode stream --host <IP_ETHERNET_HUB_LAPTOP> --port 9876
+     ```
+2. **Khi tích hợp thực tế với Jetson AGX Xavier qua cổng Ethernet:**
+   - Cắm cáp mạng Ethernet giữa Pi 3 và Switch/cổng Ethernet của Jetson AGX Xavier (`192.168.1.20`):
+     ```bash
+     ./build/bin/pi_capture_agent_cpp --mode stream --host 192.168.1.20 --port 9876
+     ```

@@ -1,80 +1,58 @@
-# Giải Pháp 4: Khóa Cứng 720p Gốc, Dẹp Bỏ Resize Trên Pi 3, Đẩy Sang GPU Jetson
+# Giải Pháp 4: Khóa Cứng 720p Gốc Cho Luồng Stream & Đẩy Tác Vụ Letterbox Sang GPU Jetson
 
 > **Layer:** Implementation Layer (`docs/implementation/release-1c/solutionsc/04-zero-resize-edge-and-gpu-offload.md`)  
 > **Release:** Release 1c (C/C++ Native Edge Capture & Perception Pipeline)  
 > **Target Sensor:** Digilent Pcam 5C (OmniVision OV5640 5MP MIPI CSI-2)  
-> **Target Compute:** Raspberry Pi 3 (Zero Resize) & Jetson AGX Xavier (CUDA GPU Letterbox)  
+> **Target Compute:** Raspberry Pi 3 (Native 720p Stream + NEON Preview) & Jetson AGX Xavier (CUDA GPU Letterbox)  
+> **Status:** Approved Baseline (Audit-Remediated)  
 
 ---
 
 ## 1. Bản Chất Phần Cứng Của Pcam 5C (OmniVision OV5640)
 
-Trong suốt quá trình thực nghiệm ở phiên bản Python, câu hỏi lớn nhất là: *"Phần cứng thực tế của camera Pcam 5C xuất ra khung hình độ phân giải nào là tối ưu và ổn định nhất?"*
-
 ### Sự Thật Kỹ Thuật Tầng Phần Cứng (Hardware Reality):
-1. **Chế độ 16:9 gốc của OV5640 trên bộ thu Unicam:**
-   * Cảm biến OV5640 giao tiếp qua 2 lane MIPI CSI-2 với bộ tạo xung nội vi (Internal PLL).
-   * Điểm làm việc (Operating Sweet Spot) ổn định nhất của mạch silicon OV5640 ở tỷ lệ chuẩn 16:9 là **`1280 x 720 @ 30 FPS`** với định dạng màu **`UYVY`**.
-2. **Tại sao không thể cấu hình phần cứng xuất `640x360`?**
-   * Trong lịch sử commit [`2cc9081`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py#L60-L65), việc cố gắng ép `media-ctl` cấu hình pad cảm biến thành `640x360` đã làm sai lệch tần số bộ dao động thạch anh PLL của cảm biến. Hậu quả là bộ điều khiển CSI-2 bị mất đồng bộ (CSI Desync) và luồng video bị đứt quãng.
+1. **Chế độ 16:9 gốc ổn định nhất của OV5640 trên bộ thu `bcm2835-unicam`:**
+   - Cảm biến OV5640 giao tiếp qua 2 lane MIPI CSI-2 với bộ tạo xung nội vi (Internal PLL).
+   - Điểm làm việc (Operating Sweet Spot) ổn định nhất của mạch silicon OV5640 ở tỷ lệ chuẩn 16:9 là **`1280 x 720 @ 30 FPS`** với định dạng bus **`UYVY8_1X16`** (`V4L2_PIX_FMT_UYVY`).
+2. **Tại sao không cấu hình phần cứng cảm biến xuất `640x360`?**
+   - Trong lịch sử thực nghiệm ([`services/pi_capture_agent/pi_capture_agent/camera.py`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/camera.py)), việc ép `media-ctl` cấu hình pad cảm biến thành `640x360` gây sai lệch tần số PLL của OV5640, dẫn đến mất đồng bộ CSI-2 (CSI Desync).
 3. **Tại sao không dùng chế độ `640x480`?**
-   * `640x480` là chuẩn **4:3 (VGA)**. Nếu dùng chế độ này:
-     - Trường nhìn ngang (Horizontal FOV) bị thu hẹp đáng kể, tạo điểm mù hai bên thân robot.
-     - Tỷ lệ khung hình bị méo, phá vỡ ma trận nội suy camera $K$ và làm sai lệch công thức Inverse Perspective Mapping (IPM) tính khoảng cách 3D.
+   - `640x480` là tỷ lệ **4:3 (VGA)** làm hẹp trường nhìn ngang (Horizontal FOV) và phá vỡ ma trận nội tham số $K$ đã hiệu chuẩn ở tỷ lệ 16:9 cho thuật toán Inverse Perspective Mapping (IPM).
 
 ---
 
-## 2. Thảm Họa Khi Ép Pi 3 Phải Gánh Tác Vụ Resize
+## 2. Phân Tách Rạch Ròi Giữa Chế Độ `--mode stream` Và `--mode preview`
 
-Để đưa ảnh về $640\times 360$ phục vụ mạng YOLO, phiên bản Python đã phải dùng hàm `cv2.resize()` chạy trên CPU của Pi 3:
-- **Ngốn tài nguyên vô ích:** CPU Cortex-A53 phải duyệt qua $921,600$ điểm ảnh để nội suy bilinear/nearest, ngốn từ $4 - 15\text{ms}$ cho mỗi khung hình.
-- **Phát sinh lỗi dây chuyền:** Thêm thao tác resize làm tăng chu kỳ xử lý, khiến luồng bắt hình không kịp nuốt buffer từ camera $\to$ gây rớt frame, tụt FPS thảm hại và phình bộ đệm truyền dẫn.
-- **Lãng phí chi tiết ảnh:** Ảnh bị bóp nhỏ thành 640x360 trên Pi 3 khiến các đường viền tiếp xúc sàn của vật thể ở xa ($> 2.5\text{m}$) bị nhòe, làm thuật toán IPM trên Jetson đo khoảng cách bị sai số lớn.
-
----
-
-## 3. Quyết Định Kiến Trúc Mới: Zero-Resize Trên Edge & Offload To GPU
-
-Thay vì tiếp tục "đánh vật" với việc resize trên một chiếc máy tính nhúng yếu như Raspberry Pi 3, Release 1c đưa ra quyết định kiến trúc dứt khoát:
+Trong phiên bản Python cũ, việc gọi `cv2.resize()` bằng phần mềm trên mọi khung hình trước khi nén làm tiêu tốn CPU vô ích. Trong Release 1c (C++), chúng ta áp dụng chính sách phân tách thông minh:
 
 ```mermaid
 flowchart LR
-    subgraph PI3 ["Raspberry Pi 3 (Tối Giản & Cực Nhanh)"]
-        OV["OV5640 Hardware<br/>1280x720 @ 30 FPS"] -->|DMA Zero-Copy| MMAP["V4L2 MMAP Buffer<br/>1280x720 UYVY"]
-        MMAP -->|ARM NEON Vector| ENC["TurboJPEG Encode<br/>(Chất lượng nét căng 720p)"]
-        ENC -->|Gửi ngay qua mạng| NET((Gigabit Ethernet))
+    subgraph PI3 ["Raspberry Pi 3 (C++17 Edge Capture)"]
+        OV["OV5640 Hardware<br/>1280x720 @ 30 FPS"] -->|"V4L2 MMAP"| NEON["ARM NEON vld2q_u8"]
+        NEON -->|"Chế độ --mode stream<br/>(Zero-Resize: 1280x720 gốc)"| ENC_720["tjCompressFromYUV<br/>(1280x720, Q=70)"]
+        NEON -.->|"Chế độ --mode preview<br/>(NEON 2x2 Decimation: 640x360)"| ENC_360["tjCompressFromYUV<br/>(640x360, Q=65)"]
     end
 
-    subgraph JETSON ["Jetson AGX Xavier (Quái Vật Đồ Họa 512 Cores)"]
-        NET --> VRAM["Nạp thẳng vào GPU VRAM"]
-        VRAM --> CUDA["CUDA / TensorRT Letterbox Kernel<br/>(1280x720 -> 640x640 trong < 0.2ms)"]
-        CUDA --> YOLO["Suy Luận YOLOv8-seg FP16"]
+    subgraph TARGETS ["Thiết Bị Tiếp Nhận (Wi-Fi & Ethernet)"]
+        ENC_720 ==>|"Ethernet (Jetson / Laptop Hub Type-C)<br/>hoặc Wi-Fi (Laptop)"| INGEST["TCP Ingest (:9876)<br/>+ GPU CUDA Letterbox (< 0.2ms)"]
+        ENC_360 -.->|"Wi-Fi hoặc Ethernet (Hub Type-C)"| BROWSER["Laptop Web Browser<br/>(http://<PI_IP>:8080/preview)"]
     end
 ```
 
-### Phân Bổ Nhiệm Vụ Rạch Ròi:
+### 2.1. Ở Chế Độ `--mode stream` (TCP Binary `:9876` — Zero-Resize On Edge)
+- **Trên Raspberry Pi 3:** Khóa cứng độ phân giải gốc **`1280 x 720 @ 30 FPS`**, không thực hiện bất kỳ phép co giãn ảnh nào ($\mathbf{0.00\text{ ms}}$ chi phí resize). Toàn bộ chi tiết điểm tiếp xúc mặt đất ($v_{bottom}$) của vật cản ở xa được bảo toàn nguyên vẹn.
+- **Trên Jetson AGX Xavier / Laptop GPU:** Tác vụ chuyển đổi khung hình $1280 \times 720$ sang $640 \times 640$ Letterbox cho mạng YOLOv8-seg được thực hiện trực tiếp trên GPU trong **$< 0.2\text{ ms}$**, và tọa độ Bounding Box được quy chiếu ngược về hệ quy chiếu $1280 \times 720$ để tính khoảng cách 3D IPM chính xác tuyệt đối.
 
-1. **Phía Raspberry Pi 3 (C++):**
-   - **XÓA BỎ HOÀN TOÀN** mọi mã nguồn và cấu hình liên quan đến `resize`, `binning`, `downscaling`.
-   - Cố định phần cứng duy nhất ở độ phân giải gốc: **`1280 x 720 @ 30 FPS` (UYVY)**.
-   - Bắt hình 720p thô từ V4L2 $\to$ Nén thẳng bằng TurboJPEG ARM NEON $\to$ Đóng gói Header 40B $\to$ Bắn sang Jetson.
-   - **Chi phí Resize trên Pi 3:** $\mathbf{0.00\text{ ms}}$ (Tuyệt đối không tốn 1 chu kỳ CPU nào!).
-
-2. **Phía Jetson AGX Xavier (GPU AI Brain):**
-   - Jetson sở hữu bộ vi xử lý **NVIDIA Carmel ARMv8.2 8-core CPU** và **512-core Volta GPU** kèm **64 Tensor Cores**.
-   - Việc chuyển đổi khung hình $1280 \times 720$ sang $640 \times 640$ (Letterbox chuẩn bị cho YOLO) được thực hiện trực tiếp trong bộ nhớ VRAM bằng **CUDA Kernel song song**.
-   - **Thời gian thực thi trên GPU Jetson:** $\mathbf{< 0.18\text{ ms}}$ (Gần như bằng 0, không ảnh hưởng tới FPS suy luận).
+### 2.2. Ở Chế Độ `--mode preview` (HTTP MJPEG `:8080` — Tối Ưu Cho Trình Duyệt Qua Wi-Fi)
+- Khi kỹ sư sử dụng `--mode preview` để xem trực tiếp trên trình duyệt Laptop qua Wi-Fi, hàm tách kênh NEON hỗ trợ lấy mẫu giảm chiều `2x2` (`1280x720 -> 640x360`) ngay trong lúc đọc thanh ghi mà chỉ mất `~0.6 ms`, giúp luồng MJPEG trên trình duyệt Web cực nhẹ ($\approx 4.5\text{ Mbps}$) và mượt mà ở $30\text{ FPS}$.
 
 ---
 
-## 4. Lợi Ích Vượt Trội Cho Toàn Hệ Thống Robot
+## 3. Lợi Ích Vượt Trội Cho Toàn Hệ Thống Robot
 
-| Tiêu chí đánh giá | Ép Pi 3 Resize (Kiểu cũ) | Giữ 720p gốc trên Pi $\to$ Jetson Resize (Chuẩn mới) | Lợi thế đạt được |
+| Tiêu chí đánh giá | Ép Pi 3 `cv2.resize` (Python cũ) | Kiến trúc Release 1c (C++ Native) | Lợi thế đạt được |
 | :--- | :---: | :---: | :--- |
-| **Độ trễ xử lý trên Pi 3** | Tốn $5 - 15\text{ms}$/frame | **$0.0\text{ms}$** | Tiết kiệm $100\%$ thời gian |
-| **Độ phức tạp mã nguồn C++** | Cồng kềnh, dễ lỗi con trỏ | **Cực kỳ tinh gọn, sạch sẽ** | Dễ bảo trì, tuân thủ Clean Code |
-| **Độ ổn định xung nhịp cảm biến** | Thường xuyên bị lỗi CSI desync | **Ổn định tuyệt đối 100%** | PLL OV5640 chạy ở điểm tối ưu nhất |
-| **Chất lượng phát hiện 3D** | Ảnh mờ, khó bắt đáy ở xa | **Ảnh 720p nguyên bản sắc nét** | Tăng độ chính xác đo khoảng cách Laser |
-| **Thời gian resize trên Jetson** | N/A | **$< 0.2\text{ms}$ (GPU CUDA)** | Nhanh hơn CPU Pi 3 gấp 70 lần |
-
-**Kết luận:** Quyết định dẹp bỏ hoàn toàn khâu resize trên Pi 3 là giải pháp kỹ thuật đúng đắn nhất, trả lại sự trong sáng cho tầng thu nhận biên và khai thác triệt để sức mạnh phần cứng của cả Pi 3 lẫn Jetson AGX Xavier.
+| **Chi phí Resize trong `--mode stream`** | Tốn $5 - 15\text{ms}$/frame trên CPU | **$0.0\text{ms}$ (Zero-Resize)** | Tiết kiệm $100\%$ chu kỳ CPU trên Pi 3 |
+| **Độ ổn định xung nhịp cảm biến OV5640** | Dễ lỗi CSI desync nếu đổi mode | **Khóa cứng `1280x720@30` ổn định 100%** | PLL OV5640 luôn chạy ở điểm ngọt phần cứng |
+| **Độ chính xác đo khoảng cách 3D IPM** | Giảm do mất chi tiết cạnh đáy | **Ảnh 720p nguyên bản sắc nét** | Sai số khoảng cách mét giảm tối đa |
+| **Sự tiện lợi khi test qua Wi-Fi / Ethernet** | Có `--mode preview` & `stream` | **Giữ nguyên 100% cả `preview` & `stream`** | Linh hoạt tuyệt đối trên cả Laptop và Jetson |

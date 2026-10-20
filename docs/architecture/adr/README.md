@@ -16,7 +16,8 @@ Mỗi Architecture Decision Record (ADR) ghi lại một quyết định kiến 
 | ADR ID | Decision Title | Status | Date | Decision Summary |
 | :--- | :--- | :--- | :--- | :--- |
 | [ADR-001](file:///E:/UIT/monocular-spatial-vision/docs/architecture/adr/ADR-001.md) | Phân Tách Sandbox Nghiên Cứu Độc Lập & Lựa Chọn Kiến Trúc Camera Đơn Pcam 5C | **Accepted** | 2026-10-01 | Phân tách giai đoạn 1 thành Sandbox độc lập; chuyển từ Stereo sang Camera Đơn + IMU MPU6050 để khử ghép kênh sai số. |
-| *ADR-002* | *Lựa Chọn Chiến Lược Đo Sâu Đơn Mắt Chính Thức (TBD)* | *Proposed* | Phase 2 | So sánh giữa Motion Stereo, Metric Depth Net và LiDAR Projection Fusion. |
+| [ADR-002](file:///E:/UIT/monocular-spatial-vision/docs/architecture/adr/ADR-002.md) | Xây Dựng Tác Tử Thu Nhận Biên C++17 Native (`pi_capture_agent_cpp`) & Bảo Toàn Giao Thức Kép Wi-Fi / Ethernet | **Accepted** | 2026-10-20 | Tối ưu hóa thu nhận 720p@30FPS trên Pi 3 bằng V4L2 MMAP + NEON `vld2q_u8` + `tjCompressFromYUV`, giữ nguyên 6 chế độ CLI và cả 2 phương thức truyền Wi-Fi / Ethernet (Hub Type-C Laptop & Jetson). |
+| *ADR-003* | *Lựa Chọn Chiến Lược Đo Sâu Đơn Mắt Chính Thức (TBD)* | *Proposed* | Phase 2 | So sánh giữa Motion Stereo, Metric Depth Net và LiDAR Projection Fusion. |
 
 ---
 

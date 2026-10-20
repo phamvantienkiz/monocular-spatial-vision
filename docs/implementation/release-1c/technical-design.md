@@ -2,164 +2,181 @@
 
 > **Layer:** Implementation Layer (`docs/implementation/release-1c/technical-design.md`)  
 > **Release:** Release 1c (C/C++ Native Edge Capture & Perception Pipeline)  
-> **Status:** Approved Baseline  
+> **Status:** Approved Baseline (Audited & Revised)  
 
 ---
 
-## 1. Multi-threaded Architecture & Concurrency Model
+## 1. Kiến Trúc Đa Luồng & Hai Phương Thức Truyền Dẫn (Wi-Fi & Ethernet)
 
-Khác biệt cốt lõi giữa phiên bản C++ và phiên bản Python là khả năng kiểm soát luồng phần cứng ở mức vi xử lý, không bị khóa toàn cục GIL, **khóa cứng khung hình gốc $1280 \times 720$** và loại bỏ hoàn toàn chi phí bản sao bộ nhớ (Zero-copy memory model).
-
-Tiến trình C++ trên Raspberry Pi 3 được thiết kế theo mô hình **4 luồng chuyên biệt độc lập (4 Dedicated Threads)** tương ứng với 4 nhân Cortex-A53:
+Phiên bản C++ (`services/pi_capture_agent_cpp/`) được thiết kế để khai thác trọn vẹn 4 nhân ARM Cortex-A53 trên Raspberry Pi 3 mà không bị ràng buộc bởi khóa GIL của Python, đồng thời **bảo toàn 100% các phương thức kết nối và kiểm thử như bản Python hiện tại**:
+- **Kết nối qua Wi-Fi:** Dành cho việc kiểm thử không dây tiện lợi với Laptop thông qua chế độ `--mode preview` (xem trực tiếp trên trình duyệt tại `http://<pi_wifi_ip>:8080/preview`) hoặc `--mode stream` (bắn gói tin nhị phân về `mock_ingest_server.py` / Backend trên Laptop).
+- **Kết nối qua Cáp Ethernet có dây:**
+  - *Trong quá trình Dev/Test:* Cắm dây mạng Ethernet từ Pi 3 qua **Hub chuyển đổi Type-C vào Laptop** (sử dụng IP tự động APIPA `169.254.x.x` hoặc DHCP LAN truyền qua cờ `--host <IP_LAPTOP>`) để kiểm thử luồng $1280 \times 720 @ 30\text{ FPS}$ không suy hao.
+  - *Khi tích hợp thực tế trên Robot:* Cắm dây mạng Ethernet từ Pi 3 vào Switch / cổng Ethernet của **Jetson AGX Xavier** (`192.168.1.20`).
 
 ```mermaid
 flowchart TD
-    subgraph HARDWARE ["Tầng Phần Cứng (Hardware Layer)"]
-        OV["OmniVision OV5640<br/>(MIPI CSI-2 2-lane, Native 1280x720)"]
-        MPU["IMU MPU6050<br/>(I2C-1 @ 400kHz Fast Mode)"]
+    subgraph HARDWARE ["1. Tầng Phần Cứng Cảm Biến (Hardware Layer)"]
+        OV["OmniVision OV5640 (Pcam 5C)<br/>(MIPI CSI-2 2-lane, Native 1280x720 @ 30 FPS)"]
+        MPU["IMU MPU6050<br/>(I2C-1 0x68 @ 400kHz, DLPF 44Hz)"]
     end
 
-    subgraph DRIVERS ["Tầng Nhân Hệ Điều Hành (Kernel Drivers)"]
-        V4L2_DEV["/dev/video0 (V4L2 Kernel Subsystem)<br/>4x MMAP Ring Buffers (1280x720 UYVY)"]
+    subgraph KERNEL ["2. Tầng Nhân Linux (Media Controller & V4L2)"]
+        MEDIA["/dev/media0 & /dev/v4l-subdev0<br/>(Set UYVY8_1X16/1280x720@1/30 & V4L2_CID_VFLIP=1)"]
+        V4L2_DEV["/dev/video0 (bcm2835-unicam)<br/>4x MMAP DMA Ring Buffers (1280x720 UYVY)"]
         I2C_DEV["/dev/i2c-1 (Linux I2C Subsystem)"]
     end
 
-    subgraph THREADS ["Tiến Trình C++ Thuần Túy Trên Pi 3"]
-        TH_CAP["1. Capture Thread<br/>(VIDIOC_DQBUF -> Zero-Copy Pointer)"]
-        TH_IMU["2. IMU Telemetry Thread<br/>(50Hz High-Resolution Timer Loop)"]
+    subgraph CPP_AGENT ["3. Tiến Trình C++ (pi_capture_agent_cpp trên Pi 3)"]
+        TH_CAP["Thread 1: Capture & NEON De-interleave<br/>(poll -> DQBUF -> NEON vld2_u8 UYVY to YUV422P -> QBUF ngay!)"]
+        TH_IMU["Thread 2: IMU Telemetry Thread<br/>(50Hz Steady Timer -> Atomic Pitch/Roll)"]
         
-        QUEUE_RAW["Thread-Safe Raw Queue<br/>(Capacity = 2 frames, Drop-Stale)"]
+        PLANAR_POOL["Double-Buffered Planar YUV422P Slot<br/>(2x 1.84MB Pre-allocated, Drop-Stale)"]
         
-        TH_ENC["3. Encode Worker Thread<br/>(TurboJPEG 720p C API + ARM NEON SIMD)"]
+        TH_ENC["Thread 3: TurboJPEG SIMD Encoder<br/>(tjCompressFromYUV + ARM NEON FastDCT)"]
         
-        QUEUE_TX["Thread-Safe TX Queue<br/>(Capacity = 1 frame, Latest Always)"]
+        PACKET_POOL["Triple-Buffered JPEG Packet Slot<br/>(Tách biệt buffer đang nén và buffer đang gửi)"]
         
-        TH_STREAM["4. POSIX Streamer Thread<br/>(TCP Socket, TCP_NODELAY, Auto-Reconnect)"]
+        TH_STREAM["Thread 4A: POSIX TCP Streamer (--mode stream)<br/>(TCP_NODELAY, Atomic send_all, Auto-Reconnect)"]
+        TH_PREVIEW["Thread 4B: Diagnostic HTTP Server (--mode preview)<br/>(Port 8080: /preview HTML, /stream.mjpg, /telemetry)"]
     end
 
-    subgraph JETSON ["Tầng Tính Toán AI (Jetson AGX Xavier)"]
-        NET_STREAM["Socket Stream: 40B Header + 720p JPEG"]
-        GPU_RESIZE["TensorRT / CUDA Letterbox (GPU VRAM)<br/>(1280x720 -> 640x640 trong < 0.2ms)"]
-        YOLO["YOLOv8-seg Inference"]
+    subgraph TRANSPORT ["4. Hai Phương Thức Truyền Dẫn Vật Lý"]
+        WIFI["Mạng Không Dây Wi-Fi<br/>(Tiện lợi khi test di động với Laptop)"]
+        ETH_HUB["Cáp Ethernet + Hub Type-C<br/>(Test băng thông cao trực tiếp với Laptop)"]
+        ETH_JETSON["Cáp Ethernet Nội Bộ Robot<br/>(Kết nối thực tế vào Jetson AGX Xavier)"]
     end
 
-    OV --> V4L2_DEV
+    subgraph RECEIVERS ["5. Trạm Tiếp Nhận & Xử Lý (Laptop / Jetson AGX)"]
+        BROWSER["Trình Duyệt Laptop<br/>(Xem trực tiếp http://pi:8080/preview)"]
+        MOCK_INGEST["Laptop Testbed: mock_ingest_server.py<br/>hoặc FastAPI Backend (:9876 & :8000/hud)"]
+        JETSON_BRAIN["Jetson AGX Xavier Backend (:9876)<br/>(IngestService + YOLOv8-seg TensorRT + IPM 3D)"]
+    end
+
+    OV --> MEDIA --> V4L2_DEV
     MPU --> I2C_DEV
     
-    V4L2_DEV -->|mmap memory pointer| TH_CAP
-    I2C_DEV -->|ioctl 14 bytes read| TH_IMU
+    V4L2_DEV -->|poll + mmap pointer| TH_CAP
+    I2C_DEV -->|ioctl 6B burst read| TH_IMU
     
-    TH_CAP --> QUEUE_RAW
-    QUEUE_RAW --> TH_ENC
+    TH_CAP -->|Trả QBUF trong 1.2ms| V4L2_DEV
+    TH_CAP --> PLANAR_POOL --> TH_ENC
+    TH_IMU -.->|std::atomic pitch/roll| TH_ENC
+    TH_IMU -.->|std::atomic pitch/roll| TH_PREVIEW
     
-    TH_IMU -.->|Atomic pitch & roll| TH_ENC
-    TH_ENC -->|Packed Binary Packet 720p| QUEUE_TX
+    TH_ENC --> PACKET_POOL
+    PACKET_POOL --> TH_STREAM
+    PACKET_POOL --> TH_PREVIEW
     
-    QUEUE_TX --> TH_STREAM
-    TH_STREAM --> NET_STREAM
-    NET_STREAM --> GPU_RESIZE
-    GPU_RESIZE --> YOLO
+    TH_PREVIEW ==> WIFI ==> BROWSER
+    TH_PREVIEW -.-> ETH_HUB -.-> BROWSER
+    
+    TH_STREAM ==> WIFI ==> MOCK_INGEST
+    TH_STREAM ==> ETH_HUB ==> MOCK_INGEST
+    TH_STREAM ==> ETH_JETSON ==> JETSON_BRAIN
 ```
 
 ---
 
-## 2. Chu Trình Xử Lý Khung Hình (Sequence Diagram)
+## 2. Chu Trình Xử Lý Khung Hình An Toàn Bộ Nhớ (Sequence Diagram)
+
+Thiết kế dưới đây khắc phục hoàn toàn lỗi thiếu cấu hình `media-ctl`, lỗi `TJPF_UYVY`, lỗi rò rỉ bộ đệm `V4L2_MEMORY_MMAP`, lỗi ghi đè `jpeg_buf_` và lỗi gửi thiếu byte TCP (`Partial Write`):
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant KERNEL_V4L2 as Kernel V4L2 (/dev/video0)
-    participant CAP_TH as Thread 1: Capture (Pi 3)
-    participant IMU_TH as Thread 2: IMU (Pi 3)
-    participant ENC_TH as Thread 3: Encode 720p (Pi 3)
-    participant TX_TH as Thread 4: Streamer (Pi 3)
-    participant JET_GPU as Jetson AGX Xavier (CUDA GPU)
+    participant SUBDEV as /dev/media0 & /dev/v4l-subdev0
+    participant V4L2 as /dev/video0 (4x MMAP)
+    participant CAP_TH as Thread 1: Capture + NEON
+    participant IMU_TH as Thread 2: IMU (50Hz)
+    participant ENC_TH as Thread 3: TurboJPEG
+    participant TX_TH as Thread 4: TCP Streamer / HTTP Preview
+    participant HOST as Laptop (Wi-Fi / Eth Type-C) hoặc Jetson AGX
 
-    Note over CAP_TH,KERNEL_V4L2: Khởi tạo: 4 buffers MMAP 1280x720 sẵn sàng
-    loop Chu kỳ mỗi 33.3ms (30 FPS)
-        CAP_TH->>KERNEL_V4L2: ioctl(VIDIOC_DQBUF) - Lấy frame 720p từ DMA
-        KERNEL_V4L2-->>CAP_TH: Trả về index buffer (con trỏ mmap thô UYVY)
-        CAP_TH->>ENC_TH: Chuyển giao con trỏ buffer (Zero-copy, Zero-resize)
-        
-        IMU_TH->>IMU_TH: Đọc mẫu I2C 50Hz, cập nhật atomic {pitch, roll}
-        
+    Note over SUBDEV,CAP_TH: Khởi tạo: Đặt UYVY8_1X16/1280x720@1/30 trên media0<br/>và bật V4L2_CID_VFLIP=1 trên v4l-subdev0
+    loop Chu kỳ cảm biến 33.33ms (30 FPS)
+        CAP_TH->>V4L2: poll(POLLIN, timeout=100ms) chờ ngắt VSYNC (~23.7ms)
+        CAP_TH->>V4L2: ioctl(VIDIOC_DQBUF) -> Nhận mmap_buffers[idx] (UYVY)
+        CAP_TH->>CAP_TH: ARM NEON vld2_u8 tách UYVY -> Planar YUV422P (~1.2ms)
+        CAP_TH->>V4L2: ioctl(VIDIOC_QBUF) -> Trả ngay buffer DMA về Kernel!
+        CAP_TH->>ENC_TH: Đẩy Planar YUV422P vào Double-Buffer Slot (Drop-stale)
+
+        IMU_TH->>IMU_TH: Đọc I2C 0x3B..0x40 mỗi 20ms, cập nhật atomic {pitch, roll}
+
         activate ENC_TH
-        ENC_TH->>ENC_TH: tjCompress2() 720p với ARM NEON SIMD (7 - 9ms)
-        ENC_TH->>ENC_TH: Đóng gói PackedFrameHeader 40B (w=1280, h=720)
-        ENC_TH->>CAP_TH: Báo hoàn tất nén
+        ENC_TH->>ENC_TH: tjCompressFromYUV(YUV422P, TJSAMP_422, Q=70, FASTDCT) (~7.2ms)
+        ENC_TH->>ENC_TH: Đóng gói PackedFrameHeader 40B (std::memcpy float -> htonl)
+        ENC_TH->>TX_TH: Hoán đổi con trỏ vào Triple-Buffer Packet Slot (Latest Frame)
         deactivate ENC_TH
-        
-        CAP_TH->>KERNEL_V4L2: ioctl(VIDIOC_QBUF) - Trả buffer lại cho camera DMA
-        
-        ENC_TH->>TX_TH: Đẩy gói tin vào hàng đợi truyền dẫn (Ghi đè nếu bận)
-        
-        TX_TH->>JET_GPU: send() Header 40B + send() JPEG payload 720p qua TCP
-        activate JET_GPU
-        JET_GPU->>JET_GPU: Giải mã JPEG và CUDA Letterbox sang 640x640 (< 0.2ms)
-        JET_GPU->>JET_GPU: Suy luận TensorRT YOLOv8-seg
-        deactivate JET_GPU
+
+        activate TX_TH
+        TX_TH->>HOST: send_all(Header 40B + JPEG Bytes) qua TCP_NODELAY (Wi-Fi / Ethernet)
+        Note over TX_TH,HOST: Đảm bảo gửi đủ 100% (40 + payload_len) bytes của frame<br/>không bao giờ cắt ngang làm lệch pha Magic 0x5043!
+        deactivate TX_TH
     end
 ```
 
 ---
 
-## 3. Mô Hình Bộ Nhớ Zero-Copy & Triệt Tiêu Chi Phí Resize
+## 3. Cơ Chế Quản Lý Bộ Nhớ Không Rò Rỉ & Không Tranh Chấp (Memory & Concurrency Safety)
 
-Nhằm tối ưu hóa tài nguyên trên RAM $1\text{GB}$ của Raspberry Pi 3:
-1. **Không sao chép bộ đệm camera:** Dữ liệu hình ảnh từ cảm biến OV5640 được phần cứng DMA ghi trực tiếp vào 4 vùng nhớ kernel (`v4l2_buffer`) tại kích thước chuẩn $1280 \times 720 \times 2\text{ bytes} \approx 1.84\text{MB}$. Khi nén ảnh, con trỏ vùng nhớ `mmap_buffers[i]` được truyền thẳng vào hàm `tjCompress2()` của `libjpeg-turbo`.
-2. **Loại bỏ 100% chi phí Resize trên Pi 3:** Tuyệt đối không gọi bất kỳ hàm nội suy co nhỏ ảnh nào. Toàn bộ chu kỳ CPU của Pi 3 chỉ dành cho nén SIMD và gửi mạng.
-3. **Bộ nhớ nén tái sử dụng (Pre-allocated JPEG Buffer):** Vùng nhớ chứa kết quả JPEG nén được cấp phát trước một lần duy nhất lúc khởi động (`max_jpeg_size = tjBufSize(1280, 720, TJSAMP_422)` $\approx 1.3\text{MB}$). Không có thao tác `malloc()` hay `free()` nào diễn ra trong vòng lặp chính.
-4. **Cơ chế thả trôi khung hình (Drop-Stale Policy):** Khi mạng bị nghẽn, hàng đợi truyền dẫn chỉ giữ dung lượng tối đa 1 khung hình. Khung hình mới nén xong sẽ ghi đè trực tiếp lên khung hình cũ nếu khung hình cũ chưa kịp gửi, đảm bảo độ trễ hình ảnh tới đích luôn $< 20\text{ms}$.
+1. **Giải phóng V4L2 DMA Buffer tức thời (Zero DMA Buffer Starvation):**
+   - Thay vì giữ con trỏ `mmap` của nhân Linux đi xuyên qua hàng đợi sang luồng Encode (dễ gây mất dấu `VIDIOC_QBUF` khi frame bị drop), `Thread 1 (Capture)` sử dụng tập lệnh vector **ARM NEON (`vld2_u8`)** vừa đọc từ vùng nhớ `mmap` vừa tách trực tiếp các byte đan xen `U0 Y0 V0 Y1` vào 3 mặt phẳng `Y`, `U`, `V` của bộ đệm `YUV422P` trong $\sim 1.2\text{ms}$, rồi **gọi `ioctl(fd, VIDIOC_QBUF)` trả lại buffer ngay lập tức trong cùng một luồng** (kèm lớp bọc RAII `V4l2BufferGuard`).
+   - Nhờ đó, trình điều khiển `bcm2835-unicam` luôn có đủ 4 bộ đệm DMA luân phiên ở mọi điều kiện tải.
+2. **Nén trực tiếp từ Planar `YUV422P` bằng `tjCompressFromYUV()`:**
+   - Do cảm biến OV5640 xuất ra không gian màu YCbCr 4:2:2 (`UYVY`), việc tách sang Planar `YUV422P` và gọi `tjCompressFromYUV(..., TJSAMP_422, ...)` giúp `libjpeg-turbo` bỏ qua hoàn toàn bước chuyển đổi hệ màu `RGB -> YCbCr` và bước nội suy giảm mẫu màu (Chroma Subsampling), đạt tốc độ nén thực tế $\sim 7.2 - 8.4\text{ms}$ cho khung hình $1280 \times 720$.
+3. **Triple-Buffering giữa Luồng Nén và Luồng Mạng (Zero Data Race):**
+   - Hệ thống cấp phát trước 3 bộ đệm gói tin (`PacketSlot buffer_pool[3]`, mỗi slot rộng $40\text{B} + \text{tjBufSize}(1280, 720, \text{TJSAMP\_422})$):
+     - **Slot `write_idx`:** Đang được `Thread 3 (Encode)` ghi dữ liệu JPEG mới.
+     - **Slot `latest_idx`:** Chứa khung hình hoàn chỉnh mới nhất đang chờ gửi (nếu `Thread 3` nén xong frame mới trước khi `Thread 4` kịp lấy, `write_idx` và `latest_idx` hoán đổi nguyên tử — tự động hủy frame cũ mà không làm hỏng dữ liệu).
+     - **Slot `read_idx`:** Đang được `Thread 4 (Streamer)` giữ độc quyền để truyền qua hàm `send_all()` trên mạng Wi-Fi hoặc Ethernet.
 
 ---
 
-## 4. Đặc Tả Struct Nhị Phân & Endianness (40 Bytes)
+## 4. Đặc Tả Struct Nhị Phân 40 Bytes (An Toàn Với Cờ `-O3` Strict Aliasing)
 
-Cấu trúc Binary Header 40 bytes được định nghĩa chặt chẽ bằng ngôn ngữ C để tương thích $100\%$ với socket server trên Jetson AGX Xavier:
+Cấu trúc Binary Header 40 bytes tuân thủ chính xác định dạng `>HHIQffIIII` đang vận hành trong [`services/pi_capture_agent/pi_capture_agent/packer.py`](file:///E:/UIT/monocular-spatial-vision/services/pi_capture_agent/pi_capture_agent/packer.py) và [`services/backend/app/services/ingest_service.py`](file:///E:/UIT/monocular-spatial-vision/services/backend/app/services/ingest_service.py):
 
 ```cpp
+#pragma once
+#include <cstdint>
+#include <cstring>
+#include <arpa/inet.h>
+#include <endian.h>
+
 #pragma pack(push, 1)
 struct PackedFrameHeader {
-    uint16_t magic;         // 0x5043 ('PC') - Big-Endian
-    uint16_t version;       // 1 - Big-Endian
-    uint32_t frame_id;      // Số thứ tự khung hình tăng dần - Big-Endian
-    uint64_t timestamp_ns;  // Thời gian chụp (Unix epoch nanoseconds) - Big-Endian
-    float    pitch_deg;     // Góc nghiêng trục pitch (độ) - IEEE 754 Big-Endian
-    float    roll_deg;      // Góc nghiêng trục roll (độ) - IEEE 754 Big-Endian
-    uint32_t payload_len;   // Kích thước mảng bytes JPEG 720p - Big-Endian
-    uint32_t width;         // Cố định: 1280 - Big-Endian
-    uint32_t height;        // Cố định: 720 - Big-Endian
-    uint32_t reserved;      // Dự phòng căn lề: 0x00000000 - Big-Endian
+    uint16_t magic_be;         // 0x5043 ('PC') - Big-Endian
+    uint16_t version_be;       // 1 - Big-Endian
+    uint32_t frame_id_be;      // Số thứ tự khung hình tăng dần - Big-Endian
+    uint64_t timestamp_ns_be;  // Mốc thời gian chụp (nanoseconds) - Big-Endian
+    uint32_t pitch_deg_be;     // IEEE 754 float32 bits của pitch_deg - Big-Endian
+    uint32_t roll_deg_be;      // IEEE 754 float32 bits của roll_deg - Big-Endian
+    uint32_t payload_len_be;   // Kích thước mảng bytes JPEG theo sau - Big-Endian
+    uint32_t width_be;         // Chiều rộng ảnh (1280) - Big-Endian
+    uint32_t height_be;        // Chiều cao ảnh (720) - Big-Endian
+    uint32_t reserved_be;      // Dự phòng căn lề: 0x00000000
 };
 #pragma pack(pop)
-static_assert(sizeof(PackedFrameHeader) == 40, "Header size must be strictly 40 bytes!");
-```
 
-Mọi trường số nguyên và số thực dấu phẩy động đều được chuyển đổi sang chuẩn mạng (Network Byte Order - Big-Endian) thông qua `htons()`, `htonl()`, `htobe64()`.
+static_assert(sizeof(PackedFrameHeader) == 40, "Header size must be strictly 40 bytes!");
+
+inline uint32_t float_to_be32(float value) noexcept {
+    uint32_t raw_bits = 0;
+    std::memcpy(&raw_bits, &value, sizeof(float)); // Chuẩn C++17: Không vi phạm Strict Aliasing
+    return htonl(raw_bits);
+}
+```
 
 ---
 
-## 5. Kiến Trúc Quản Lý Gói & Toolchain (Conan 2.0 + CMake)
+## 5. Thiết Kế 2 Chế Độ Truyền Mạng Song Song: `--mode preview` & `--mode stream`
 
-Để đảm bảo nguyên tắc bất biến **Zero System Pollution**, toàn bộ cây phụ thuộc C++ được quản lý theo mô hình phân tầng:
+Để đáp ứng đầy đủ nhu cầu kiểm thử và vận hành thực tế giống hệt phiên bản Python:
 
-```mermaid
-flowchart LR
-    subgraph PYTHON_ISOLATION ["1. Tầng Cô Lập Môi Trường (Workspace Root)"]
-        UV[".venv (Tạo bởi uv)"]
-        CONAN_CLI["Conan 2.0 CLI (uv pip install conan)"]
-        UV --> CONAN_CLI
-    end
-
-    subgraph REPO_CACHE ["2. Tầng Cache Cục Bộ (In-Workspace Cache)"]
-        CONAN_HOME[".conan/ (export CONAN_HOME=$PWD/.conan)<br/>Tất cả cache, recipe và binaries đã build"]
-    end
-
-    subgraph CMAKE_BUILD ["3. Tầng Biên Dịch Dự Án (Build Artifacts)"]
-        BUILD_DIR["build/<br/>generators/conan_toolchain.cmake<br/>bin/pi_capture_agent_cpp"]
-    end
-
-    CONAN_CLI -->|Quản lý cache tại| CONAN_HOME
-    CONAN_CLI -->|Sinh Toolchain vào| BUILD_DIR
-    BUILD_DIR -->|Biên dịch an toàn với -j2| BINARY["pi_capture_agent_cpp (Native ELF ARMv8 720p)"]
-```
+| Đặc tính kỹ thuật | Chế độ 1: Diagnostic Preview (`--mode preview`) | Chế độ 2: High-Throughput Stream (`--mode stream`) |
+| :--- | :--- | :--- |
+| **Giao thức ứng dụng** | HTTP/1.1 Server (`GET /preview`, `GET /stream.mjpg`, `GET /snapshot.jpg`, `GET /telemetry`) | Raw Binary TCP Client (`PackedFrameHeader` 40B + JPEG Payload) |
+| **Môi trường mạng hỗ trợ** | **Wi-Fi** (ưu tiên tiện lợi) hoặc **Cáp Ethernet** | **Wi-Fi** (khi test di động), **Ethernet qua Hub Type-C Laptop** (khi test tốc độ cao), **Ethernet sang Jetson AGX** (khi chạy thực tế) |
+| **Độ phân giải & Chất lượng** | Mặc định thu nhỏ nhanh bằng NEON về **$640 \times 360$ ($Q=65$)** để truyền cực nhẹ qua sóng Wi-Fi (có thể cấu hình trong `capture_pi.yaml`) | Khóa cứng độ phân giải gốc **$1280 \times 720$ ($Q=70$)** bảo toàn 100% chi tiết cho YOLO và thuật toán đo khoảng cách IPM |
+| **Phần mềm phía nhận** | Chỉ cần mở trình duyệt Chrome/Edge trên Laptop hoặc điện thoại tại `http://<pi_ip>:8080/preview` | Chạy `uv run python scripts/mock_ingest_server.py` hoặc `uvicorn app.main:app` (xem tại `http://localhost:8000/hud`) |
