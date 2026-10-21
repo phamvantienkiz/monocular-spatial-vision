@@ -75,6 +75,7 @@ private:
     void set_hardware_flip();
 
     std::string device_;
+    std::string subdev_node_;
     int req_w_, req_h_, fps_;
     bool rotate_180_;
     int buf_count_;

@@ -68,7 +68,7 @@ bool V4l2Camera::probe_unicam() {
         /* Extract sensor entity name, e.g. "ov5640 10-003c" */
         std::string sensor_entity;
         {
-            auto pos = output.find("ov5640 ");
+            auto pos = output.find("ov5640");
             if (pos == std::string::npos) continue;
             /* Walk back to find "entity N: " */
             auto entity_start = output.rfind("entity ", pos);
@@ -76,12 +76,27 @@ bool V4l2Camera::probe_unicam() {
             auto colon = output.find(':', entity_start);
             if (colon == std::string::npos) continue;
             auto name_start = colon + 2; // skip ": "
-            auto name_end = output.find_first_of(" \t\n(", name_start + 6);
-            if (name_end == std::string::npos) name_end = output.size();
-            sensor_entity = output.substr(name_start, name_end - name_start);
+            auto paren = output.find(" (", name_start);
+            if (paren == std::string::npos) paren = output.find('\n', name_start);
+            if (paren == std::string::npos) paren = output.size();
+            sensor_entity = output.substr(name_start, paren - name_start);
             /* Trim trailing whitespace */
             while (!sensor_entity.empty() && sensor_entity.back() <= ' ')
                 sensor_entity.pop_back();
+        }
+
+        /* Extract subdev node for sensor controls (HFLIP/VFLIP), e.g. "/dev/v4l-subdev0" */
+        {
+            auto pos = output.find(sensor_entity);
+            if (pos != std::string::npos) {
+                auto subdev_pos = output.find("/dev/v4l-subdev", pos);
+                if (subdev_pos != std::string::npos) {
+                    auto end = output.find_first_not_of("0123456789", subdev_pos + 15);
+                    if (end == std::string::npos) end = output.size();
+                    subdev_node_ = output.substr(subdev_pos, end - subdev_pos);
+                    LOG_INFO("Found sensor subdevice node: %s", subdev_node_.c_str());
+                }
+            }
         }
 
         /* Extract video node for unicam-image, e.g. "/dev/video0" */
@@ -220,19 +235,35 @@ bool V4l2Camera::configure_framerate() {
 void V4l2Camera::set_hardware_flip() {
     if (!rotate_180_) return;
 
+    int target_fd = fd_;
+    int subdev_fd = -1;
+
+    if (!subdev_node_.empty()) {
+        subdev_fd = ::open(subdev_node_.c_str(), O_RDWR);
+        if (subdev_fd >= 0) {
+            target_fd = subdev_fd;
+        } else {
+            LOG_WARN("Cannot open subdev %s for flip: %s", subdev_node_.c_str(), strerror(errno));
+        }
+    }
+
     struct v4l2_control ctrl{};
 
     ctrl.id    = V4L2_CID_HFLIP;
     ctrl.value = 1;
-    if (xioctl(fd_, VIDIOC_S_CTRL, &ctrl) < 0)
-        LOG_WARN("Failed to set HFLIP: %s", strerror(errno));
+    if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0)
+        LOG_WARN("Failed to set HFLIP on %s: %s", (subdev_fd >= 0 ? subdev_node_.c_str() : device_.c_str()), strerror(errno));
 
     ctrl.id    = V4L2_CID_VFLIP;
     ctrl.value = 1;
-    if (xioctl(fd_, VIDIOC_S_CTRL, &ctrl) < 0)
-        LOG_WARN("Failed to set VFLIP: %s", strerror(errno));
+    if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0)
+        LOG_WARN("Failed to set VFLIP on %s: %s", (subdev_fd >= 0 ? subdev_node_.c_str() : device_.c_str()), strerror(errno));
 
-    LOG_INFO("Hardware flip enabled (HFLIP=1, VFLIP=1)");
+    if (subdev_fd >= 0) {
+        ::close(subdev_fd);
+    }
+
+    LOG_INFO("Hardware flip configured (HFLIP=1, VFLIP=1)");
 }
 
 /* ── request_buffers + mmap ───────────────────────────────────────── */
