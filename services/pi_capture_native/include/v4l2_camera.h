@@ -77,8 +77,12 @@ private:
     std::string device_;
     std::string subdev_node_;
     int req_w_, req_h_, fps_;
+    int capture_w_ = 0, capture_h_ = 0;
     bool rotate_180_;
+    bool need_crop_ = false;
     int buf_count_;
+
+    std::vector<uint8_t> crop_buf_;
 
     int fd_ = -1;
     MmapBuffer* buffers_ = nullptr;

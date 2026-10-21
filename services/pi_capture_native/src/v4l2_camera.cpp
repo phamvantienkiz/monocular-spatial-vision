@@ -34,7 +34,23 @@ static int xioctl(int fd, unsigned long request, void* arg) {
 V4l2Camera::V4l2Camera(const std::string& device, int width, int height,
                        int fps, bool rotate_180, int buf_count)
     : device_(device), req_w_(width), req_h_(height),
-      fps_(fps), rotate_180_(rotate_180), buf_count_(buf_count) {}
+      fps_(fps), rotate_180_(rotate_180), buf_count_(buf_count) {
+    if (req_w_ == 640 && req_h_ == 480) {
+        need_crop_ = true;
+        capture_w_ = 720;
+        capture_h_ = 480;
+        actual_w_ = 640;
+        actual_h_ = 480;
+        crop_buf_.resize(640 * 480 * 2);
+        LOG_INFO("Anti-stripe mode active: hardware captures 720x480, center-cropped to 640x480");
+    } else {
+        need_crop_ = false;
+        capture_w_ = req_w_;
+        capture_h_ = req_h_;
+        actual_w_ = req_w_;
+        actual_h_ = req_h_;
+    }
+}
 
 V4l2Camera::~V4l2Camera() { close(); }
 
@@ -117,14 +133,14 @@ bool V4l2Camera::probe_unicam() {
         char mcmd[512];
         snprintf(mcmd, sizeof(mcmd),
                  "media-ctl -d %s -V \"'%s':0 [fmt:UYVY8_1X16/%dx%d]\" 2>&1",
-                 media_dev, sensor_entity.c_str(), req_w_, req_h_);
+                 media_dev, sensor_entity.c_str(), capture_w_, capture_h_);
         FILE* mc = popen(mcmd, "r");
         if (mc) {
             char buf[256];
             while (fgets(buf, sizeof(buf), mc)) {} /* consume output */
             int rc = pclose(mc);
             if (rc == 0)
-                LOG_INFO("Set media-ctl format UYVY8_1X16/%dx%d", req_w_, req_h_);
+                LOG_INFO("Set media-ctl format UYVY8_1X16/%dx%d", capture_w_, capture_h_);
             else
                 LOG_WARN("media-ctl format notice (rc=%d)", rc);
         }
@@ -191,8 +207,8 @@ bool V4l2Camera::open() {
 bool V4l2Camera::configure_format() {
     struct v4l2_format fmt{};
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    fmt.fmt.pix.width       = static_cast<uint32_t>(req_w_);
-    fmt.fmt.pix.height      = static_cast<uint32_t>(req_h_);
+    fmt.fmt.pix.width       = static_cast<uint32_t>(capture_w_);
+    fmt.fmt.pix.height      = static_cast<uint32_t>(capture_h_);
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_UYVY;
     fmt.fmt.pix.field       = V4L2_FIELD_NONE;
 
@@ -201,8 +217,10 @@ bool V4l2Camera::configure_format() {
         return false;
     }
 
-    actual_w_ = static_cast<int>(fmt.fmt.pix.width);
-    actual_h_ = static_cast<int>(fmt.fmt.pix.height);
+    if (!need_crop_) {
+        actual_w_ = static_cast<int>(fmt.fmt.pix.width);
+        actual_h_ = static_cast<int>(fmt.fmt.pix.height);
+    }
 
     if (fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_UYVY)
         LOG_WARN("Driver chose different pixel format 0x%08X", fmt.fmt.pix.pixelformat);
@@ -362,8 +380,25 @@ bool V4l2Camera::dequeue_frame(const uint8_t*& data, size_t& bytes, int& index) 
     }
 
     index = static_cast<int>(buf.index);
-    data  = static_cast<const uint8_t*>(buffers_[index].start);
-    bytes = buf.bytesused;
+
+    if (need_crop_) {
+        const int src_stride = 720 * 2; // 1440 bytes
+        const int dst_stride = 640 * 2; // 1280 bytes
+        const int offset_bytes = ((720 - 640) / 2) * 2; // 40 px * 2 = 80 bytes
+        const uint8_t* raw = static_cast<const uint8_t*>(buffers_[index].start);
+        uint8_t* dst = crop_buf_.data();
+
+        for (int r = 0; r < 480; ++r) {
+            memcpy(dst + r * dst_stride,
+                   raw + r * src_stride + offset_bytes,
+                   dst_stride);
+        }
+        data  = dst;
+        bytes = 640 * 480 * 2;
+    } else {
+        data  = static_cast<const uint8_t*>(buffers_[index].start);
+        bytes = buf.bytesused;
+    }
     return true;
 }
 
