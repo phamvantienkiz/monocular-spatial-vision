@@ -129,18 +129,18 @@ bool V4l2Camera::probe_unicam() {
         LOG_INFO("Detected unicam pipeline: media=%s video=%s sensor='%s'",
                  media_dev, video_node.c_str(), sensor_entity.c_str());
 
-        /* Configure sensor pad format via media-ctl (same as Python's subprocess call) */
+        /* Configure sensor pad format & FPS via media-ctl */
         char mcmd[512];
         snprintf(mcmd, sizeof(mcmd),
-                 "media-ctl -d %s -V \"'%s':0 [fmt:UYVY8_1X16/%dx%d]\" 2>&1",
-                 media_dev, sensor_entity.c_str(), capture_w_, capture_h_);
+                 "media-ctl -d %s -V \"'%s':0 [fmt:UYVY8_1X16/%dx%d@1/%d]\" 2>&1",
+                 media_dev, sensor_entity.c_str(), capture_w_, capture_h_, fps_);
         FILE* mc = popen(mcmd, "r");
         if (mc) {
             char buf[256];
             while (fgets(buf, sizeof(buf), mc)) {} /* consume output */
             int rc = pclose(mc);
             if (rc == 0)
-                LOG_INFO("Set media-ctl format UYVY8_1X16/%dx%d", capture_w_, capture_h_);
+                LOG_INFO("Set media-ctl format UYVY8_1X16/%dx%d @ 1/%d", capture_w_, capture_h_, fps_);
             else
                 LOG_WARN("media-ctl format notice (rc=%d)", rc);
         }
@@ -231,13 +231,31 @@ bool V4l2Camera::configure_format() {
 /* ── configure_framerate ──────────────────────────────────────────── */
 
 bool V4l2Camera::configure_framerate() {
+    /* 1. Explicitly configure sensor hardware subdevice to requested FPS */
+    if (!subdev_node_.empty()) {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd),
+                 "v4l2-ctl -d %s --set-subdev-fps=pad=0,fps=%d 2>&1",
+                 subdev_node_.c_str(), fps_);
+        FILE* fp = popen(cmd, "r");
+        if (fp) {
+            char buf[128];
+            while (fgets(buf, sizeof(buf), fp)) {}
+            int rc = pclose(fp);
+            if (rc == 0) {
+                LOG_INFO("Set sensor subdevice %s to %d FPS", subdev_node_.c_str(), fps_);
+                return true;
+            }
+        }
+    }
+
+    /* 2. Fallback to standard V4L2 VIDIOC_S_PARM on video node */
     struct v4l2_streamparm parm{};
     parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     parm.parm.capture.timeperframe.numerator   = 1;
     parm.parm.capture.timeperframe.denominator = static_cast<uint32_t>(fps_);
 
     if (xioctl(fd_, VIDIOC_S_PARM, &parm) < 0) {
-        LOG_WARN("VIDIOC_S_PARM failed (fps may not be configurable): %s", strerror(errno));
         return false;
     }
     return true;
