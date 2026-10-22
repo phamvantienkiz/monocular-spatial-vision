@@ -104,13 +104,15 @@ static void capture_worker(V4l2Camera& cam, ImuReader* imu) {
 static void run_stream(const std::string& device, int width, int height,
                        int fps, bool rotate_180, int jpeg_quality,
                        const std::string& host, int port,
-                       int imu_bus, int imu_addr) {
+                       int imu_bus, int imu_addr,
+                       bool lock_30fps, int exposure, int gain) {
     /* Camera */
     V4l2Camera cam(device, width, height, fps, rotate_180);
     if (!cam.open()) {
         LOG_ERROR("Failed to open camera. Aborting.");
         return;
     }
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
 
     /* IMU (best-effort, same as Python) */
     ImuReader imu(imu_bus, imu_addr);
@@ -220,12 +222,14 @@ static void run_stream(const std::string& device, int width, int height,
 
 static void run_snapshot(const std::string& device, int width, int height,
                          int fps, bool rotate_180, int jpeg_quality,
-                         const std::string& output_path) {
+                         const std::string& output_path,
+                         bool lock_30fps, int exposure, int gain) {
     V4l2Camera cam(device, width, height, fps, rotate_180);
     if (!cam.open()) {
         LOG_ERROR("Failed to open camera for snapshot.");
         return;
     }
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
 
     /* Warm-up */
     for (int i = 0; i < 5; ++i) {
@@ -423,12 +427,14 @@ static void handle_http_client(int client_fd) {
 
 static void run_preview(const std::string& device, int width, int height,
                         int fps, bool rotate_180, int jpeg_quality,
-                        int preview_port, int imu_bus, int imu_addr) {
+                        int preview_port, int imu_bus, int imu_addr,
+                        bool lock_30fps, int exposure, int gain) {
     V4l2Camera cam(device, width, height, fps, rotate_180);
     if (!cam.open()) {
         LOG_ERROR("Failed to open camera for preview.");
         return;
     }
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
 
     ImuReader imu(imu_bus, imu_addr);
     ImuReader* imu_ptr = nullptr;
@@ -564,6 +570,9 @@ static void print_usage(const char* prog) {
         "  --fps    N        Frame rate     (default: 30)\n"
         "  --quality N       JPEG quality 1-100 (default: 65)\n"
         "  --rotate-180      Enable hardware HFLIP+VFLIP on OV5640\n"
+        "  --lock-30fps      Lock exposure & gain to guarantee 30 FPS indoor\n"
+        "  --exposure N      Manual exposure shutter lines (default: 600)\n"
+        "  --gain N          Manual gain value (default: 250)\n"
         "\n"
         "Stream options:\n"
         "  --host ADDR       Ingest server IP   (default: 192.168.1.20)\n"
@@ -590,6 +599,9 @@ int main(int argc, char* argv[]) {
     int         fps          = 30;
     int         quality      = 65;
     bool        rotate_180   = false;
+    bool        lock_30fps   = false;
+    int         exposure     = 600;
+    int         gain         = 250;
     std::string host         = "192.168.1.20";
     int         port         = 9876;
     int         preview_port = 8080;
@@ -605,6 +617,9 @@ int main(int argc, char* argv[]) {
         {"fps",          required_argument, nullptr, 'f'},
         {"quality",      required_argument, nullptr, 'q'},
         {"rotate-180",   no_argument,       nullptr, 'r'},
+        {"lock-30fps",   no_argument,       nullptr, 'L'},
+        {"exposure",     required_argument, nullptr, 'E'},
+        {"gain",         required_argument, nullptr, 'G'},
         {"host",         required_argument, nullptr, 'h'},
         {"port",         required_argument, nullptr, 'p'},
         {"preview-port", required_argument, nullptr, 'P'},
@@ -616,7 +631,7 @@ int main(int argc, char* argv[]) {
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:rh:p:P:o:b:a:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:rLE:G:h:p:P:o:b:a:", long_opts, nullptr)) != -1) {
         switch (c) {
             case 'm': mode   = optarg; break;
             case 'd': device = optarg; break;
@@ -625,6 +640,9 @@ int main(int argc, char* argv[]) {
             case 'f': fps    = atoi(optarg); break;
             case 'q': quality = atoi(optarg); break;
             case 'r': rotate_180 = true; break;
+            case 'L': lock_30fps = true; break;
+            case 'E': exposure = atoi(optarg); break;
+            case 'G': gain = atoi(optarg); break;
             case 'h': host   = optarg; break;
             case 'p': port   = atoi(optarg); break;
             case 'P': preview_port = atoi(optarg); break;
@@ -645,12 +663,15 @@ int main(int argc, char* argv[]) {
 
     if (mode == "preview") {
         run_preview(device, width, height, fps, rotate_180, quality,
-                    preview_port, imu_bus, imu_addr);
+                    preview_port, imu_bus, imu_addr,
+                    lock_30fps, exposure, gain);
     } else if (mode == "stream") {
         run_stream(device, width, height, fps, rotate_180, quality,
-                   host, port, imu_bus, imu_addr);
+                   host, port, imu_bus, imu_addr,
+                   lock_30fps, exposure, gain);
     } else if (mode == "snapshot") {
-        run_snapshot(device, width, height, fps, rotate_180, quality, output);
+        run_snapshot(device, width, height, fps, rotate_180, quality, output,
+                     lock_30fps, exposure, gain);
     } else {
         LOG_ERROR("Unknown mode: %s", mode.c_str());
         print_usage(argv[0]);

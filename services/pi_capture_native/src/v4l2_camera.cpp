@@ -302,6 +302,92 @@ void V4l2Camera::set_hardware_flip() {
     LOG_INFO("Hardware flip configured (HFLIP=1, VFLIP=1)");
 }
 
+/* ── set_exposure_mode ──────────────────────────────────────────────
+ * Configures sensor exposure, gain, and power line anti-flicker frequency.
+ * - Anti-flicker 50Hz prevents rolling horizontal wave banding under indoor lights.
+ * - lock_30fps=true forces manual exposure (shutter <= 33ms) + boost gain,
+ *   preventing OV5640 AEC from dropping to 15 FPS in low light.
+ * - lock_30fps=false restores automatic exposure and gain.
+ * ──────────────────────────────────────────────────────────────────── */
+
+void V4l2Camera::set_exposure_mode(bool lock_30fps, int exposure, int gain) {
+    int target_fd = fd_;
+    int subdev_fd = -1;
+
+    if (!subdev_node_.empty()) {
+        subdev_fd = ::open(subdev_node_.c_str(), O_RDWR);
+        if (subdev_fd >= 0) {
+            target_fd = subdev_fd;
+        } else {
+            LOG_WARN("Cannot open subdev %s for exposure ctrl: %s", subdev_node_.c_str(), strerror(errno));
+        }
+    }
+
+    /* 1. Set 50Hz anti-flicker (Vietnam electrical grid) to eliminate rolling wave banding */
+    struct v4l2_control flk{};
+    flk.id    = V4L2_CID_POWER_LINE_FREQUENCY;
+    flk.value = V4L2_CID_POWER_LINE_FREQUENCY_50HZ;
+    if (xioctl(target_fd, VIDIOC_S_CTRL, &flk) < 0) {
+        LOG_WARN("Failed to set 50Hz anti-flicker on %s: %s",
+                 (subdev_fd >= 0 ? subdev_node_.c_str() : device_.c_str()), strerror(errno));
+    }
+
+    struct v4l2_control ctrl{};
+
+    if (lock_30fps) {
+        /* Switch to manual exposure */
+        ctrl.id    = V4L2_CID_EXPOSURE_AUTO;
+        ctrl.value = V4L2_EXPOSURE_MANUAL;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            LOG_WARN("Failed to set manual exposure mode: %s", strerror(errno));
+        }
+
+        /* Set manual exposure shutter lines */
+        ctrl.id    = V4L2_CID_EXPOSURE;
+        ctrl.value = exposure;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            LOG_WARN("Failed to set exposure=%d: %s", exposure, strerror(errno));
+        }
+
+        /* Disable auto gain */
+        ctrl.id    = V4L2_CID_AUTOGAIN;
+        ctrl.value = 0;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            LOG_WARN("Failed to disable autogain: %s", strerror(errno));
+        }
+
+        /* Set manual gain */
+        ctrl.id    = V4L2_CID_ANALOGUE_GAIN;
+        ctrl.value = gain;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            ctrl.id    = V4L2_CID_GAIN;
+            ctrl.value = gain;
+            xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
+        }
+
+        LOG_INFO("Exposure locked at 30 FPS mode (Exposure: %d, Gain: %d, Anti-flicker: 50Hz)", exposure, gain);
+    } else {
+        /* Auto-exposure and auto-gain */
+        ctrl.id    = V4L2_CID_EXPOSURE_AUTO;
+        ctrl.value = V4L2_EXPOSURE_AUTO;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            LOG_WARN("Failed to set auto exposure mode: %s", strerror(errno));
+        }
+
+        ctrl.id    = V4L2_CID_AUTOGAIN;
+        ctrl.value = 1;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
+            LOG_WARN("Failed to enable autogain: %s", strerror(errno));
+        }
+
+        LOG_INFO("Exposure mode: AUTO (Anti-flicker: 50Hz)");
+    }
+
+    if (subdev_fd >= 0) {
+        ::close(subdev_fd);
+    }
+}
+
 /* ── request_buffers + mmap ───────────────────────────────────────── */
 
 bool V4l2Camera::request_buffers() {
