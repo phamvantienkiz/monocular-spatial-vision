@@ -571,8 +571,8 @@ static void print_usage(const char* prog) {
         "  --quality N       JPEG quality 1-100 (default: 65)\n"
         "  --rotate-180      Enable hardware HFLIP+VFLIP on OV5640\n"
         "  --lock-30fps      Lock exposure & gain to guarantee 30 FPS indoor\n"
-        "  --exposure N      Manual exposure shutter lines (default: 600)\n"
-        "  --gain N          Manual gain value (default: 250)\n"
+        "  --exposure N      Manual exposure shutter lines <= 450 (default: 250)\n"
+        "  --gain N          Manual gain value (default: 32)\n"
         "\n"
         "Stream options:\n"
         "  --host ADDR       Ingest server IP   (default: 192.168.1.20)\n"
@@ -600,8 +600,8 @@ int main(int argc, char* argv[]) {
     int         quality      = 65;
     bool        rotate_180   = false;
     bool        lock_30fps   = false;
-    int         exposure     = 600;
-    int         gain         = 250;
+    int         exposure     = 250;
+    int         gain         = 32;
     std::string host         = "192.168.1.20";
     int         port         = 9876;
     int         preview_port = 8080;

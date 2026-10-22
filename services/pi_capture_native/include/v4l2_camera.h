@@ -62,10 +62,10 @@ public:
 
     /**
      * Controls exposure and anti-flicker:
-     * - lock_30fps = true: locks shutter <= 33ms and boosts gain (guarantees 30 FPS indoor).
+     * - lock_30fps = true: locks shutter <= 33ms (exposure <= 450) and sets clean gain (guarantees 30 FPS indoor).
      * - lock_30fps = false: normal auto-exposure mode.
      */
-    void set_exposure_mode(bool lock_30fps, int exposure = 600, int gain = 250);
+    void set_exposure_mode(bool lock_30fps, int exposure = 250, int gain = 32);
 
     /**
      * Probes /dev/media* for an active unicam + ov5640 pipeline.
