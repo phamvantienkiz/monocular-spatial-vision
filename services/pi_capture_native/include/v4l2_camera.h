@@ -61,13 +61,6 @@ public:
     int height() const { return actual_h_; }
 
     /**
-     * Controls exposure and anti-flicker:
-     * - lock_30fps = true: locks shutter <= 33ms (exposure <= 450) and sets clean gain (guarantees 30 FPS indoor).
-     * - lock_30fps = false: normal auto-exposure mode.
-     */
-    void set_exposure_mode(bool lock_30fps, int exposure = 250, int gain = 32);
-
-    /**
      * Probes /dev/media* for an active unicam + ov5640 pipeline.
      * If found, overrides device_ and configures the sensor pad via media-ctl.
      * @return true if unicam pipeline was detected and configured.
