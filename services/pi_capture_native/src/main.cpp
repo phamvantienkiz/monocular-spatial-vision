@@ -44,9 +44,9 @@ static std::atomic<bool> g_running{true};
 
 static void signal_handler(int) { g_running.store(false); }
 
-/* ── single-slot frame exchange (matches Python Queue(maxsize=1)) ── */
+/* ── Stage 1 -> Stage 2: Raw Frame Slot ── */
 
-struct FrameSlot {
+struct RawFrameSlot {
     std::vector<uint8_t> pixels;   /* copied from mmap buffer */
     uint64_t             ts_ns   = 0;
     float                pitch   = 0.0f;
@@ -54,15 +54,26 @@ struct FrameSlot {
     bool                 valid   = false;
 };
 
-static std::mutex              g_slot_mutex;
-static std::condition_variable g_slot_cv;
-static FrameSlot               g_slot;
+static std::mutex              g_raw_mutex;
+static std::condition_variable g_raw_cv;
+static RawFrameSlot            g_raw_slot;
 
-/* ── capture worker thread ─────────────────────────────────────────
- * Mirrors Python's capture_worker() in cli.py:
- *   - Reads raw UYVY frame from V4L2
- *   - Reads IMU attitude
- *   - Publishes to single-slot (drops old frame if consumer is slow)
+/* ── Stage 2 -> Stage 3: Encoded Packet Slot ── */
+
+struct PacketSlot {
+    std::vector<uint8_t> packet;
+    uint32_t             frame_id = 0;
+    float                pitch    = 0.0f;
+    float                roll     = 0.0f;
+    bool                 valid    = false;
+};
+
+static std::mutex              g_packet_mutex;
+static std::condition_variable g_packet_cv;
+static PacketSlot              g_packet_slot;
+
+/* ── Thread 1: capture worker ───────────────────────────────────────
+ * Reads raw UYVY frame from V4L2 + IMU attitude, publishes to raw slot.
  * ──────────────────────────────────────────────────────────────────── */
 
 static void capture_worker(V4l2Camera& cam, ImuReader* imu) {
@@ -82,24 +93,79 @@ static void capture_worker(V4l2Camera& cam, ImuReader* imu) {
         uint64_t ts = timestamp_ns();
 
         {
-            std::lock_guard<std::mutex> lk(g_slot_mutex);
-            /* Ensure pixel buffer is pre-sized to avoid repeated allocation */
-            if (g_slot.pixels.size() != bytes)
-                g_slot.pixels.resize(bytes);
-            memcpy(g_slot.pixels.data(), data, bytes);
-            g_slot.ts_ns = ts;
-            g_slot.pitch = att.pitch_deg;
-            g_slot.roll  = att.roll_deg;
-            g_slot.valid = true;
+            std::lock_guard<std::mutex> lk(g_raw_mutex);
+            /* Pre-size buffer to avoid repeated heap allocation */
+            if (g_raw_slot.pixels.size() != bytes)
+                g_raw_slot.pixels.resize(bytes);
+            memcpy(g_raw_slot.pixels.data(), data, bytes);
+            g_raw_slot.ts_ns = ts;
+            g_raw_slot.pitch = att.pitch_deg;
+            g_raw_slot.roll  = att.roll_deg;
+            g_raw_slot.valid = true;
         }
-        g_slot_cv.notify_one();
+        g_raw_cv.notify_one();
 
         /* Return mmap buffer to V4L2 immediately */
         cam.requeue_buffer(buf_idx);
     }
 }
 
-/* ── run_stream ────────────────────────────────────────────────────── */
+/* ── Thread 2: encode worker ────────────────────────────────────────
+ * Pops raw UYVY frame, converts with ARM NEON, compresses with TurboJPEG,
+ * and packs binary packet into packet slot.
+ * ──────────────────────────────────────────────────────────────────── */
+
+static void encode_worker(int width, int height, int jpeg_quality) {
+    JpegEncoder encoder(jpeg_quality);
+    std::vector<uint8_t> local_pixels;
+    std::vector<uint8_t> local_packet;
+    uint32_t frame_id = 0;
+
+    while (g_running.load()) {
+        uint64_t ts = 0;
+        float pitch = 0.0f;
+        float roll  = 0.0f;
+
+        {
+            std::unique_lock<std::mutex> lk(g_raw_mutex);
+            g_raw_cv.wait_for(lk, std::chrono::milliseconds(100),
+                              [] { return g_raw_slot.valid || !g_running.load(); });
+            if (!g_running.load()) break;
+            if (!g_raw_slot.valid) continue;
+
+            /* Zero-allocation pointer swap with pre-allocated buffer */
+            local_pixels.swap(g_raw_slot.pixels);
+            ts    = g_raw_slot.ts_ns;
+            pitch = g_raw_slot.pitch;
+            roll  = g_raw_slot.roll;
+            g_raw_slot.valid = false;
+        }
+
+        /* TurboJPEG compression (NEON accelerated) */
+        uint8_t* jpeg_buf = nullptr;
+        unsigned long jpeg_size = 0;
+        if (!encoder.encode(local_pixels.data(), width, height, jpeg_buf, jpeg_size))
+            continue;
+
+        /* Pack into reusable vector without extra heap allocations */
+        pack_frame_to(local_packet, frame_id, ts, pitch, roll,
+                      jpeg_buf, static_cast<uint32_t>(jpeg_size),
+                      static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+        encoder.free_buffer(jpeg_buf);
+
+        {
+            std::lock_guard<std::mutex> lk(g_packet_mutex);
+            g_packet_slot.packet.swap(local_packet);
+            g_packet_slot.frame_id = frame_id++;
+            g_packet_slot.pitch    = pitch;
+            g_packet_slot.roll     = roll;
+            g_packet_slot.valid    = true;
+        }
+        g_packet_cv.notify_one();
+    }
+}
+
+/* ── run_stream (Thread 3: Network streamer) ─────────────────────── */
 
 static void run_stream(const std::string& device, int width, int height,
                        int fps, bool rotate_180, int jpeg_quality,
@@ -121,14 +187,11 @@ static void run_stream(const std::string& device, int width, int height,
         LOG_WARN("IMU init failed. Continuing with pitch=0, roll=0.");
     }
 
-    /* JPEG Encoder */
-    JpegEncoder encoder(jpeg_quality);
-
     /* Network Streamer */
     SocketStreamer streamer(host, port);
     streamer.connect();
 
-    /* Warm-up: discard first 5 frames (auto-exposure / white-balance settling) */
+    /* Warm-up: discard first 5 frames */
     LOG_INFO("Warming up camera sensor...");
     for (int i = 0; i < 5 && g_running.load(); ++i) {
         const uint8_t* d; size_t n; int idx;
@@ -136,61 +199,48 @@ static void run_stream(const std::string& device, int width, int height,
             cam.requeue_buffer(idx);
     }
 
-    /* Launch capture thread */
+    /* Launch Thread 1 (Capture) and Thread 2 (Encode) */
     std::thread cap_thread(capture_worker, std::ref(cam), imu_ptr);
+    std::thread enc_thread(encode_worker, cam.width(), cam.height(), jpeg_quality);
 
-    LOG_INFO("=== Streaming pipeline active ===");
+    LOG_INFO("=== Streaming pipeline active (3-thread decoupled) ===");
     LOG_INFO("  Target: %s:%d", host.c_str(), port);
-    LOG_INFO("  Video:  %dx%d @ %d fps (UYVY → JPEG Q%d)",
+    LOG_INFO("  Video:  %dx%d @ %d fps (UYVY → NEON → TurboJPEG Q%d)",
              cam.width(), cam.height(), fps, jpeg_quality);
 
-    uint32_t frame_id    = 0;
-    uint32_t frames_sent = 0;
-    size_t   bytes_sent  = 0;
-    double   t_stats     = time_now_sec();
+    std::vector<uint8_t> send_buf; /* Persistent buffer OUTSIDE while loop */
+    uint32_t frames_sent  = 0;
+    size_t   bytes_sent   = 0;
+    double   t_stats      = time_now_sec();
+    uint32_t cur_frame_id = 0;
+    float    cur_pitch    = 0.0f;
+    float    cur_roll     = 0.0f;
 
-    /* Main encode-and-send loop (mirrors Python's main thread in run_stream) */
+    /* Main thread = Thread 3 (Network streamer) */
     while (g_running.load()) {
-        FrameSlot local;
-
         {
-            std::unique_lock<std::mutex> lk(g_slot_mutex);
-            g_slot_cv.wait_for(lk, std::chrono::milliseconds(100),
-                               [] { return g_slot.valid || !g_running.load(); });
-            if (!g_slot.valid) continue;
+            std::unique_lock<std::mutex> lk(g_packet_mutex);
+            g_packet_cv.wait_for(lk, std::chrono::milliseconds(100),
+                                 [] { return g_packet_slot.valid || !g_running.load(); });
+            if (!g_running.load()) break;
+            if (!g_packet_slot.valid) continue;
 
-            /* Move data to local slot (avoids holding mutex during encode) */
-            local.pixels.swap(g_slot.pixels);
-            local.ts_ns = g_slot.ts_ns;
-            local.pitch = g_slot.pitch;
-            local.roll  = g_slot.roll;
-            g_slot.valid = false;
+            /* Zero-allocation swap */
+            send_buf.swap(g_packet_slot.packet);
+            cur_frame_id = g_packet_slot.frame_id;
+            cur_pitch    = g_packet_slot.pitch;
+            cur_roll     = g_packet_slot.roll;
+            g_packet_slot.valid = false;
         }
-
-        /* JPEG encode */
-        uint8_t* jpeg_buf = nullptr;
-        unsigned long jpeg_size = 0;
-        if (!encoder.encode(local.pixels.data(), cam.width(), cam.height(),
-                            jpeg_buf, jpeg_size))
-            continue;
-
-        /* Pack binary frame (40-byte header + JPEG payload) */
-        auto packet = pack_frame(frame_id, local.ts_ns,
-                                 local.pitch, local.roll,
-                                 jpeg_buf, static_cast<uint32_t>(jpeg_size),
-                                 static_cast<uint32_t>(cam.width()),
-                                 static_cast<uint32_t>(cam.height()));
-        encoder.free_buffer(jpeg_buf);
 
         /* Send over TCP */
-        bool ok = streamer.send_packet(packet.data(), packet.size());
-        ++frame_id;
+        bool ok = streamer.send_packet(send_buf.data(), send_buf.size());
         if (ok) {
             ++frames_sent;
-            bytes_sent += packet.size();
+            bytes_sent += send_buf.size();
         }
 
-        /* Periodic statistics (every ~1 second, same as Python) */
+        /* Periodic statistics (every ~1 second) */
         double now = time_now_sec();
         double elapsed = now - t_stats;
         if (elapsed >= 1.0) {
@@ -198,7 +248,7 @@ static void run_stream(const std::string& device, int width, int height,
             double kb_rate    = (bytes_sent / 1024.0) / elapsed;
             const char* status = streamer.is_connected() ? "CONNECTED" : "RECONNECTING";
             LOG_INFO("[%s] Frame #%u | Rate: %.1f FPS (%.1f KB/s) | Pitch: %+.2f° | Roll: %+.2f°",
-                     status, frame_id, fps_actual, kb_rate, local.pitch, local.roll);
+                     status, cur_frame_id, fps_actual, kb_rate, cur_pitch, cur_roll);
             frames_sent = 0;
             bytes_sent = 0;
             t_stats = now;
@@ -208,8 +258,10 @@ static void run_stream(const std::string& device, int width, int height,
     /* Clean shutdown */
     LOG_INFO("Shutting down streaming pipeline...");
     g_running.store(false);
-    g_slot_cv.notify_all();
+    g_raw_cv.notify_all();
+    g_packet_cv.notify_all();
     if (cap_thread.joinable()) cap_thread.join();
+    if (enc_thread.joinable()) enc_thread.join();
     streamer.close();
     cam.close();
     imu.close();

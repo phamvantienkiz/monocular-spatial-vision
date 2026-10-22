@@ -35,15 +35,19 @@ static void write_be64(uint8_t* dst, uint64_t v) {
     memcpy(dst, &v, sizeof(v));
 }
 
-std::vector<uint8_t> pack_frame(uint32_t frame_id,
-                                uint64_t ts_ns,
-                                float    pitch_deg,
-                                float    roll_deg,
-                                const uint8_t* jpeg_data,
-                                uint32_t jpeg_size,
-                                uint32_t width,
-                                uint32_t height) {
-    std::vector<uint8_t> packet(HEADER_SIZE + jpeg_size);
+void pack_frame_to(std::vector<uint8_t>& packet,
+                   uint32_t frame_id,
+                   uint64_t ts_ns,
+                   float    pitch_deg,
+                   float    roll_deg,
+                   const uint8_t* jpeg_data,
+                   uint32_t jpeg_size,
+                   uint32_t width,
+                   uint32_t height) {
+    size_t total_size = HEADER_SIZE + jpeg_size;
+    if (packet.size() != total_size)
+        packet.resize(total_size);
+
     uint8_t* h = packet.data();
 
     /* Offset  0 */ write_be16(h + 0,  PROTO_MAGIC);
@@ -58,7 +62,20 @@ std::vector<uint8_t> pack_frame(uint32_t frame_id,
     /* Offset 36 */ write_be32(h + 36, 0); /* reserved */
 
     /* Append JPEG payload */
-    memcpy(h + HEADER_SIZE, jpeg_data, jpeg_size);
+    if (jpeg_size > 0 && jpeg_data)
+        memcpy(h + HEADER_SIZE, jpeg_data, jpeg_size);
+}
 
+std::vector<uint8_t> pack_frame(uint32_t frame_id,
+                                uint64_t ts_ns,
+                                float    pitch_deg,
+                                float    roll_deg,
+                                const uint8_t* jpeg_data,
+                                uint32_t jpeg_size,
+                                uint32_t width,
+                                uint32_t height) {
+    std::vector<uint8_t> packet;
+    pack_frame_to(packet, frame_id, ts_ns, pitch_deg, roll_deg,
+                  jpeg_data, jpeg_size, width, height);
     return packet;
 }

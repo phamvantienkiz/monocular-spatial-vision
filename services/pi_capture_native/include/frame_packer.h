@@ -44,3 +44,14 @@ std::vector<uint8_t> pack_frame(uint32_t frame_id,
                                 uint32_t jpeg_size,
                                 uint32_t width,
                                 uint32_t height);
+
+/** Reusable-buffer version to avoid heap allocation on every frame. */
+void pack_frame_to(std::vector<uint8_t>& packet,
+                   uint32_t frame_id,
+                   uint64_t timestamp_ns,
+                   float    pitch_deg,
+                   float    roll_deg,
+                   const uint8_t* jpeg_data,
+                   uint32_t jpeg_size,
+                   uint32_t width,
+                   uint32_t height);

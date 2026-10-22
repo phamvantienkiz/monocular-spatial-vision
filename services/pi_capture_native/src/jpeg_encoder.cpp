@@ -18,6 +18,10 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 /* ── constructor / destructor ──────────────────────────────────────── */
 
 JpegEncoder::JpegEncoder(int quality) : quality_(quality) {
@@ -71,11 +75,36 @@ void JpegEncoder::uyvy_to_yuv422p(const uint8_t* src, int width, int height) {
         uint8_t* u = u_dst + row * half_w;
         uint8_t* v = v_dst + row * half_w;
 
-        for (int p = 0; p < half_w; ++p) {
-            u[p]         = s[0];  /* U  */
-            y[p * 2]     = s[1];  /* Y0 */
-            v[p]         = s[2];  /* V  */
-            y[p * 2 + 1] = s[3];  /* Y1 */
+        int col = 0;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        /* Process 16 pixels (32 bytes UYVY: 16 Y, 8 U, 8 V) per iteration using ARM NEON */
+        for (; col <= width - 16; col += 16) {
+            /* vld4_u8 deinterleaves:
+             * val[0] = U0, U2, U4, U6, U8, U10, U12, U14  (8 U samples)
+             * val[1] = Y0, Y2, Y4, Y6, Y8, Y10, Y12, Y14  (8 Y even samples)
+             * val[2] = V0, V2, V4, V6, V8, V10, V12, V14  (8 V samples)
+             * val[3] = Y1, Y3, Y5, Y7, Y9, Y11, Y13, Y15  (8 Y odd samples)
+             */
+            uint8x8x4_t raw = vld4_u8(s);
+            vst1_u8(u, raw.val[0]);
+            vst1_u8(v, raw.val[2]);
+
+            /* Re-interleave Y0, Y1, Y2, Y3... into contiguous Y plane */
+            uint8x8x2_t y_pair = {raw.val[1], raw.val[3]};
+            vst2_u8(y, y_pair);
+
+            s += 32;
+            y += 16;
+            u += 8;
+            v += 8;
+        }
+#endif
+        /* Scalar fallback for remaining pixels or non-ARM architectures */
+        for (; col < width; col += 2) {
+            *u++ = s[0];  /* U  */
+            *y++ = s[1];  /* Y0 */
+            *v++ = s[2];  /* V  */
+            *y++ = s[3];  /* Y1 */
             s += 4;
         }
     }

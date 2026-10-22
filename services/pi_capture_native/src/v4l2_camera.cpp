@@ -20,6 +20,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <linux/videodev2.h>
+#include <linux/v4l2-subdev.h>
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 
@@ -194,7 +195,10 @@ bool V4l2Camera::open() {
     /* 7. Request and map buffers */
     if (!request_buffers()) { close(); return false; }
 
-    /* 8. Start streaming */
+    /* 8. Re-assert frame rate right before streaming */
+    configure_framerate();
+
+    /* 9. Start streaming */
     if (!start_streaming()) { close(); return false; }
 
     LOG_INFO("Camera opened: %s  %dx%d  (requested %dx%d @ %d fps)",
@@ -233,6 +237,19 @@ bool V4l2Camera::configure_format() {
 bool V4l2Camera::configure_framerate() {
     /* 1. Explicitly configure sensor hardware subdevice to requested FPS */
     if (!subdev_node_.empty()) {
+        int sfd = ::open(subdev_node_.c_str(), O_RDWR);
+        if (sfd >= 0) {
+            struct v4l2_subdev_frame_interval ival{};
+            ival.pad = 0;
+            ival.interval.numerator = 1;
+            ival.interval.denominator = static_cast<uint32_t>(fps_);
+            if (xioctl(sfd, VIDIOC_SUBDEV_S_FRAME_INTERVAL, &ival) == 0) {
+                LOG_INFO("Set sensor subdev %s frame interval to 1/%d via ioctl",
+                         subdev_node_.c_str(), ival.interval.denominator);
+            }
+            ::close(sfd);
+        }
+
         char cmd[256];
         snprintf(cmd, sizeof(cmd),
                  "v4l2-ctl -d %s --set-subdev-fps=pad=0,fps=%d 2>&1",
