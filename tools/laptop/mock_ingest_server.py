@@ -1,15 +1,17 @@
 """Mock Ingest Server for Developer Laptop.
 
 Listens on TCP port 9876, receives packets from Raspberry Pi 3,
-unpacks 36-byte binary header, displays frame in OpenCV window, and prints telemetry stats.
+unpacks 40-byte binary header, displays frame in OpenCV window, and prints telemetry stats.
 
 Usage:
     python tools/laptop/mock_ingest_server.py --port 9876
 """
 
 import argparse
+import collections
 import socket
 import struct
+import threading
 import time
 import cv2
 import numpy as np
@@ -18,9 +20,6 @@ HEADER_FORMAT = ">HHIQffIIII"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 MAGIC_NUMBER = 0x5043
 
-
-import collections
-import threading
 
 def run_mock_server(port: int = 9876):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -43,7 +42,7 @@ def run_mock_server(port: int = 9876):
         def _receiver_worker():
             try:
                 while not stop_event.is_set():
-                    # Read 36-byte header
+                    # Read 40-byte header
                     header_data = bytearray()
                     while len(header_data) < HEADER_SIZE and not stop_event.is_set():
                         packet = client_sock.recv(HEADER_SIZE - len(header_data))
@@ -106,12 +105,15 @@ def run_mock_server(port: int = 9876):
                     break
         except KeyboardInterrupt:
             stop_event.set()
+        except Exception as e:
+            print(f"[!] Display error: {e}")
+            stop_event.set()
         finally:
             stop_event.set()
             recv_thread.join(timeout=1.0)
             client_sock.close()
             cv2.destroyAllWindows()
-            print("[-] Client disconnected / session ended.")
+            print("[-] Client disconnected / session ended. Waiting for next connection...\n")
 
 
 if __name__ == "__main__":
