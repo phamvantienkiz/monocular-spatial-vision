@@ -333,15 +333,23 @@ void V4l2Camera::set_hardware_flip() {
 }
 
 /* ── set_exposure_mode ──────────────────────────────────────────────
- * Configures OV5640 exposure, gain, and 50Hz power-line anti-flicker.
+ * Configures OV5640 exposure, gain, AWB, and 50Hz power-line anti-flicker.
  *
- * Technical Context (from OV5640 datasheet & Claude analysis):
- *  - In 640x480 / 720p MIPI mode, VTS = 1000 lines, max AEC exposure = 984 lines.
- *  - At 15 FPS, 1 line = 66.7 us (max exposure ~65.6 ms).
- *  - At 30 FPS, 1 line = 33.3 us (max exposure ~32.8 ms, -1 stop light).
- *  - Setting excessive manual gain (e.g. 250) causes purple tint & blown highlights
- *    because OV5640 gain ceiling (0x3a18/0x3a19) is 15.5x and AWB desaturates.
- *  - Safe defaults for --lock-30fps: exposure <= 450 (e.g. 350), gain = 48 (or auto-gain).
+ * Technical Context (Balanced 25-30 FPS & Anti-Flicker Design):
+ *  - In 640x480 / 720x480 MIPI mode, VTS = 1000 lines, max AEC exposure = 984 lines.
+ *  - Under 50Hz AC mains (Vietnam), indoor lights pulse at 100Hz (period = 10.0 ms).
+ *  - At 30 FPS (1 line = 33.33 us), 300 lines = 10.0 ms (1 cycle), 600 lines = 20.0 ms (2 cycles).
+ *    At 25 FPS (1 line = 40.00 us), 250 lines = 10.0 ms (1 cycle), 500 lines = 20.0 ms (2 cycles).
+ *  - Setting exposure = 350 lines (11.66 ms) caused BOTH underexposure (-60% light vs Python)
+ *    AND rolling horizontal banding (11.66 ms is not a multiple of 10.0 ms).
+ *  - Setting manual gain (e.g. 48 or 250) disabled hardware AGC (`V4L2_CID_AUTOGAIN=0`),
+ *    starving the OV5640 AWB statistics engine of valid mid-luminance pixels and causing
+ *    a blue-purple color cast.
+ *  - Balanced Solution:
+ *    1. Default --lock-30fps shutter exposure is scaled to exactly 20.0 ms (600 lines at 30fps,
+ *       500 lines at 25fps) — +71% brighter than 350 lines AND 100% aligned with 50Hz mains!
+ *    2. Hardware AGC (`V4L2_CID_AUTOGAIN=1`) and AWB (`V4L2_CID_AUTO_WHITE_BALANCE=1`) stay ON
+ *       by default so OV5640 dynamically converges white balance and gain without purple tint.
  * ──────────────────────────────────────────────────────────────────── */
 
 void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int manual_gain) {
@@ -361,10 +369,19 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
     flk.value = V4L2_CID_POWER_LINE_FREQUENCY_50HZ;
     xioctl(target_fd, VIDIOC_S_CTRL, &flk);
 
+    /* 2. Always ensure hardware Auto White Balance (AWB) is active */
+    struct v4l2_control awb{};
+    awb.id    = V4L2_CID_AUTO_WHITE_BALANCE;
+    awb.value = 1;
+    xioctl(target_fd, VIDIOC_S_CTRL, &awb);
+
     struct v4l2_control ctrl{};
 
     if (lock_30fps || manual_exposure > 0) {
-        int exp_val  = (manual_exposure > 0) ? manual_exposure : 350;
+        /* Compute 20ms (2x 100Hz flicker period) anti-banding default based on target FPS:
+         * 600 lines @ 30fps (~20.0ms), 500 lines @ 25fps (~20.0ms) */
+        int default_20ms_lines = (fps_ > 0 && fps_ <= 30) ? (fps_ * 20) : 600;
+        int exp_val = (manual_exposure > 0) ? manual_exposure : default_20ms_lines;
         if (exp_val > 984) exp_val = 984; /* OV5640 VTS=1000 max shutter limit */
 
         /* Switch to manual exposure */
@@ -382,7 +399,7 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
         }
 
         if (manual_gain > 0) {
-            /* Disable auto gain and apply clean bounded manual gain */
+            /* Disable auto gain only when user explicitly requests a manual gain */
             ctrl.id    = V4L2_CID_AUTOGAIN;
             ctrl.value = 0;
             xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
@@ -394,18 +411,18 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
                 ctrl.value = manual_gain;
                 xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
             }
-            LOG_INFO("Exposure locked for 30 FPS (exposure=%d lines, manual gain=%d, 50Hz anti-flicker)",
+            LOG_INFO("Exposure locked (exposure=%d lines [~20ms 50Hz-aligned], manual gain=%d, AWB=ON)",
                      exp_val, manual_gain);
         } else {
-            /* Keep hardware AGC enabled so OV5640 adapts gain smoothly without purple clipping */
+            /* Keep hardware AGC enabled so OV5640 adapts gain & AWB smoothly without purple tint */
             ctrl.id    = V4L2_CID_AUTOGAIN;
             ctrl.value = 1;
             xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
-            LOG_INFO("Shutter locked for 30 FPS (exposure=%d lines, autogain=ON, 50Hz anti-flicker)",
+            LOG_INFO("Balanced shutter lock active (exposure=%d lines [~20ms 50Hz-aligned], autogain=ON, AWB=ON)",
                      exp_val);
         }
     } else {
-        /* Default: Auto-exposure + Auto-gain + 50Hz anti-flicker */
+        /* Default: Auto-exposure + Auto-gain + AWB + 50Hz anti-flicker */
         ctrl.id    = V4L2_CID_EXPOSURE_AUTO;
         ctrl.value = V4L2_EXPOSURE_AUTO;
         xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
@@ -414,12 +431,42 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
         ctrl.value = 1;
         xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
 
-        LOG_INFO("Sensor exposure mode: AUTO AEC/AGC (50Hz anti-flicker enabled)");
+        LOG_INFO("Sensor exposure mode: AUTO AEC/AGC/AWB (50Hz anti-flicker enabled)");
     }
 
     if (subdev_fd >= 0) {
         ::close(subdev_fd);
     }
+}
+
+void V4l2Camera::set_white_balance_gains(int red_bal, int blue_bal) {
+    if (red_bal <= 0 && blue_bal <= 0) return;
+
+    int target_fd = fd_;
+    int subdev_fd = -1;
+    if (!subdev_node_.empty()) {
+        subdev_fd = ::open(subdev_node_.c_str(), O_RDWR);
+        if (subdev_fd >= 0) target_fd = subdev_fd;
+    }
+
+    struct v4l2_control ctrl{};
+    ctrl.id    = V4L2_CID_AUTO_WHITE_BALANCE;
+    ctrl.value = 0;
+    xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
+
+    if (red_bal > 0) {
+        ctrl.id    = V4L2_CID_RED_BALANCE;
+        ctrl.value = red_bal;
+        xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
+    }
+    if (blue_bal > 0) {
+        ctrl.id    = V4L2_CID_BLUE_BALANCE;
+        ctrl.value = blue_bal;
+        xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
+    }
+
+    if (subdev_fd >= 0) ::close(subdev_fd);
+    LOG_INFO("Manual white balance set (red=%d, blue=%d)", red_bal, blue_bal);
 }
 
 /* ── query_exposure_gain ────────────────────────────────────────────

@@ -41,6 +41,8 @@
 
 /* ── globals for signal handler ────────────────────────────────────── */
 static std::atomic<bool> g_running{true};
+static std::atomic<bool> g_swap_uv{false};
+static std::atomic<bool> g_yuyv_order{false};
 
 static void signal_handler(int) { g_running.store(false); }
 
@@ -117,12 +119,14 @@ static void capture_worker(V4l2Camera& cam, ImuReader* imu) {
  * ──────────────────────────────────────────────────────────────────── */
 
 static void encode_worker(int width, int height, int jpeg_quality) {
-    JpegEncoder encoder(jpeg_quality);
+    JpegEncoder encoder(jpeg_quality, g_swap_uv.load(), g_yuyv_order.load());
     std::vector<uint8_t> local_pixels;
     std::vector<uint8_t> local_packet;
     uint32_t frame_id = 0;
 
     while (g_running.load()) {
+        encoder.set_swap_uv(g_swap_uv.load());
+        encoder.set_yuyv_order(g_yuyv_order.load());
         uint64_t ts = 0;
         float pitch = 0.0f;
         float roll  = 0.0f;
@@ -304,7 +308,7 @@ static void run_snapshot(const std::string& device, int width, int height,
     }
 
     /* Encode JPEG */
-    JpegEncoder encoder(jpeg_quality);
+    JpegEncoder encoder(jpeg_quality, g_swap_uv.load(), g_yuyv_order.load());
     uint8_t* jpeg_buf = nullptr;
     unsigned long jpeg_size = 0;
     if (!encoder.encode(data, cam.width(), cam.height(), jpeg_buf, jpeg_size)) {
@@ -440,17 +444,32 @@ static void handle_http_client(int client_fd) {
             h      = g_prev_frame.height;
             seq    = g_prev_frame.seq;
         }
-        char json[384];
+        char json[448];
         snprintf(json, sizeof(json),
                  "{\"frame_id\":%llu,\"pitch_deg\":%.2f,\"roll_deg\":%.2f,\"fps\":%.1f,"
-                 "\"exposure\":%d,\"gain\":%d,\"width\":%d,\"height\":%d}",
-                 static_cast<unsigned long long>(seq), p, r, f, exp_v, gain_v, w, h);
-        char resp[640];
+                 "\"exposure\":%d,\"gain\":%d,\"width\":%d,\"height\":%d,"
+                 "\"swap_uv\":%s,\"yuyv\":%s}",
+                 static_cast<unsigned long long>(seq), p, r, f, exp_v, gain_v, w, h,
+                 g_swap_uv.load() ? "true" : "false",
+                 g_yuyv_order.load() ? "true" : "false");
+        char resp[704];
         snprintf(resp, sizeof(resp),
                  "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
                  "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
                  strlen(json), json);
         http_send_all(client_fd, resp, strlen(resp));
+    } else if (strstr(req, "GET /toggle-uv")) {
+        bool next = !g_swap_uv.load();
+        g_swap_uv.store(next);
+        LOG_INFO("[PREVIEW] Toggled chroma --swap-uv = %s", next ? "ON" : "OFF");
+        const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
+        http_send_all(client_fd, ok_resp, strlen(ok_resp));
+    } else if (strstr(req, "GET /toggle-yuyv")) {
+        bool next = !g_yuyv_order.load();
+        g_yuyv_order.store(next);
+        LOG_INFO("[PREVIEW] Toggled byte order --yuyv = %s", next ? "YUYV" : "UYVY");
+        const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
+        http_send_all(client_fd, ok_resp, strlen(ok_resp));
     } else if (strstr(req, "GET /snapshot.jpg")) {
         std::vector<uint8_t> cur_jpeg;
         {
@@ -482,10 +501,13 @@ static void handle_http_client(int client_fd) {
             "    h1 { margin-bottom: 8px; font-size: 20px; color: #38bdf8; }\n"
             "    .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin: 8px 0; width: 90%; max-width: 900px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }\n"
             "    img { width: 100%; border-radius: 6px; background: #020617; }\n"
-            "    .hud-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 10px; }\n"
+            "    .hud-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 10px; }\n"
             "    .hud-stat { background: #0f172a; padding: 10px; border-radius: 6px; border-left: 4px solid #38bdf8; }\n"
             "    .hud-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }\n"
             "    .hud-val { font-size: 18px; font-weight: bold; margin-top: 4px; color: #38bdf8; }\n"
+            "    .btn-row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }\n"
+            "    button { background: #0284c7; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-family: monospace; font-weight: bold; cursor: pointer; }\n"
+            "    button:hover { background: #0369a1; }\n"
             "  </style>\n"
             "</head>\n"
             "<body>\n"
@@ -499,8 +521,13 @@ static void handle_http_client(int client_fd) {
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Camera FPS</div><div class=\"hud-val\" id=\"val-fps\">-- FPS</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Resolution</div><div class=\"hud-val\" id=\"val-res\">--</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Exposure / Gain</div><div class=\"hud-val\" id=\"val-exp\">-- / --</div></div>\n"
+            "      <div class=\"hud-stat\"><div class=\"hud-label\">Chroma Mode</div><div class=\"hud-val\" id=\"val-uv\">UYVY (Normal)</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Pitch Angle</div><div class=\"hud-val\" id=\"val-pitch\">-- deg</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Roll Angle</div><div class=\"hud-val\" id=\"val-roll\">-- deg</div></div>\n"
+            "    </div>\n"
+            "    <div class=\"btn-row\">\n"
+            "      <button onclick=\"fetch('/toggle-uv')\">🔄 Toggle Swap U/V (Fix Blue/Red Cast)</button>\n"
+            "      <button onclick=\"fetch('/toggle-yuyv')\">🔀 Toggle UYVY / YUYV Byte Order</button>\n"
             "    </div>\n"
             "  </div>\n"
             "  <script>\n"
@@ -516,13 +543,14 @@ static void handle_http_client(int client_fd) {
             "        document.getElementById('val-fps').innerText = `${data.fps.toFixed(1)} FPS`;\n"
             "        document.getElementById('val-res').innerText = `${data.width}x${data.height}`;\n"
             "        document.getElementById('val-exp').innerText = `${data.exposure} / ${data.gain}`;\n"
+            "        document.getElementById('val-uv').innerText = `${data.yuyv ? 'YUYV' : 'UYVY'} ${data.swap_uv ? '(Swap UV)' : '(Normal)'}`;\n"
             "      } catch (e) {} finally { inFlight = false; }\n"
             "    }, 250);\n"
             "  </script>\n"
             "</body>\n"
             "</html>\n";
 
-        char resp[4096];
+        char resp[8192];
         snprintf(resp, sizeof(resp),
                  "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s",
                  strlen(html), html);
@@ -564,7 +592,7 @@ static void run_preview(const std::string& device, int width, int height,
 
     /* Launch Thread 2: NEON + TurboJPEG Encode Worker for Preview */
     std::thread enc_thread([&]() {
-        JpegEncoder encoder(jpeg_quality);
+        JpegEncoder encoder(jpeg_quality, g_swap_uv.load(), g_yuyv_order.load());
         std::vector<uint8_t> local_pixels;
         uint64_t seq = 0;
         uint32_t frame_count = 0;
@@ -573,6 +601,8 @@ static void run_preview(const std::string& device, int width, int height,
         SensorExposureInfo exp_info = cam.query_exposure_gain();
 
         while (g_running.load()) {
+            encoder.set_swap_uv(g_swap_uv.load());
+            encoder.set_yuyv_order(g_yuyv_order.load());
             float pitch = 0.0f;
             float roll  = 0.0f;
 
@@ -804,7 +834,7 @@ static int run_test_perf(const std::string& device, int width, int height,
     }
     cam.set_exposure_mode(lock_30fps, exposure, gain);
 
-    JpegEncoder encoder(jpeg_quality);
+    JpegEncoder encoder(jpeg_quality, g_swap_uv.load(), g_yuyv_order.load());
 
     /* Warmup 10 frames */
     LOG_INFO("Running sensor warmup (10 frames)...");
@@ -905,9 +935,11 @@ static void print_usage(const char* prog) {
         "  --buffers N       V4L2 MMAP buffer count (default: 4)\n"
         "  --rotate-180      Enable hardware HFLIP+VFLIP on OV5640\n"
         "  --vflip           Enable hardware VFLIP only on OV5640\n"
-        "  --lock-30fps      Lock shutter exposure to prevent 15fps indoor drop\n"
-        "  --exposure N      Manual exposure shutter lines <= 984 (default: auto, or 350 with --lock-30fps)\n"
-        "  --gain N          Manual gain value (default: auto, or 48 with --lock-30fps)\n"
+        "  --lock-30fps      Balanced 25-30 FPS shutter lock (20ms 50Hz-aligned + Auto-Gain & AWB)\n"
+        "  --exposure N      Manual exposure shutter lines <= 984 (default: 600 @ 30fps / 500 @ 25fps with --lock-30fps)\n"
+        "  --gain N          Manual gain value (default: auto-gain ON, even with --lock-30fps)\n"
+        "  --swap-uv         Swap U (Cb) and V (Cr) chroma planes (fixes blue/red color inversion)\n"
+        "  --yuyv            Interpret sensor byte order as YUYV instead of UYVY\n"
         "\n"
         "Stream options:\n"
         "  --host ADDR       Ingest server IP   (default: 192.168.1.20)\n"
@@ -961,6 +993,8 @@ int main(int argc, char* argv[]) {
         {"lock-30fps",   no_argument,       nullptr, 'L'},
         {"exposure",     required_argument, nullptr, 'E'},
         {"gain",         required_argument, nullptr, 'G'},
+        {"swap-uv",      no_argument,       nullptr, 'U'},
+        {"yuyv",         no_argument,       nullptr, 'Y'},
         {"host",         required_argument, nullptr, 'h'},
         {"port",         required_argument, nullptr, 'p'},
         {"preview-port", required_argument, nullptr, 'P'},
@@ -974,7 +1008,7 @@ int main(int argc, char* argv[]) {
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:B:rVLE:G:h:p:P:o:n:b:a:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:B:rVLE:G:UYh:p:P:o:n:b:a:", long_opts, nullptr)) != -1) {
         switch (c) {
             case 'm': mode   = optarg; break;
             case 'd': device = optarg; break;
@@ -988,6 +1022,8 @@ int main(int argc, char* argv[]) {
             case 'L': lock_30fps = true; break;
             case 'E': exposure   = atoi(optarg); break;
             case 'G': gain       = atoi(optarg); break;
+            case 'U': g_swap_uv.store(true); break;
+            case 'Y': g_yuyv_order.store(true); break;
             case 'h': host   = optarg; break;
             case 'p': port   = atoi(optarg); break;
             case 'P': preview_port = atoi(optarg); break;
@@ -1001,8 +1037,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (lock_30fps && exposure < 0) exposure = 350;
-    if (lock_30fps && gain < 0)     gain     = 48;
+    /* Balanced --lock-30fps defaults:
+     * - exposure = 20ms (600 lines @ 30fps, 500 lines @ 25fps) -> +71% brighter & 50Hz flicker-free!
+     * - gain     = -1 (keep hardware AGC & AWB active so white balance never turns blue/purple!) */
+    if (lock_30fps && exposure < 0) {
+        exposure = (fps > 0 && fps <= 30) ? (fps * 20) : 600;
+    }
 
     /* Install signal handlers */
     signal(SIGINT,  signal_handler);

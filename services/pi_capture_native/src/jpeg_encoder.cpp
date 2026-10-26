@@ -22,7 +22,8 @@
 
 /* ── constructor / destructor ──────────────────────────────────────── */
 
-JpegEncoder::JpegEncoder(int quality) : quality_(quality) {
+JpegEncoder::JpegEncoder(int quality, bool swap_uv, bool yuyv_order)
+    : quality_(quality), swap_uv_(swap_uv), yuyv_order_(yuyv_order) {
     handle_ = tjInitCompress();
     if (!handle_)
         LOG_ERROR("tjInitCompress failed: %s", tjGetErrorStr());
@@ -66,18 +67,25 @@ void JpegEncoder::ensure_buffers(int width, int height) {
 }
 
 /* ── uyvy_to_yuv422p_buffer ────────────────────────────────────────
- * De-interleaves packed UYVY into contiguous Y / U / V planes.
+ * De-interleaves packed UYVY (or YUYV) into contiguous Y / U / V planes.
  *
  * Input  (UYVY):  [U0 Y0 V0 Y1] [U2 Y2 V2 Y3] ...
+ * Input  (YUYV):  [Y0 U0 Y1 V0] [Y2 U2 Y3 V2] ...
  * Output (planar): [Y0 Y1 Y2 Y3 ...] [U0 U2 ...] [V0 V2 ...]
+ *                  (or V plane and U plane swapped if swap_uv == true)
  * ──────────────────────────────────────────────────────────────────── */
 
 void JpegEncoder::uyvy_to_yuv422p_buffer(const uint8_t* src, uint8_t* dst_yuv422p,
-                                         int width, int height) {
+                                         int width, int height,
+                                         bool swap_uv, bool yuyv_order) {
     const int half_w = width / 2;
     uint8_t* y_dst = dst_yuv422p;
-    uint8_t* u_dst = dst_yuv422p + width * height;
-    uint8_t* v_dst = u_dst + half_w * height;
+    uint8_t* u_plane = dst_yuv422p + width * height;
+    uint8_t* v_plane = u_plane + half_w * height;
+
+    /* If swap_uv is requested, simply swap the destination plane pointers (zero CPU overhead!) */
+    uint8_t* u_dst = swap_uv ? v_plane : u_plane;
+    uint8_t* v_dst = swap_uv ? u_plane : v_plane;
 
     for (int row = 0; row < height; ++row) {
         const uint8_t* s = src + row * width * 2;
@@ -86,42 +94,74 @@ void JpegEncoder::uyvy_to_yuv422p_buffer(const uint8_t* src, uint8_t* dst_yuv422
         uint8_t* v = v_dst + row * half_w;
 
         int col = 0;
+        if (!yuyv_order) {
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
-        /* Process 16 pixels (32 bytes UYVY: 16 Y, 8 U, 8 V) per iteration using ARM NEON */
-        for (; col <= width - 16; col += 16) {
-            /* vld4_u8 deinterleaves:
-             * val[0] = U0, U2, U4, U6, U8, U10, U12, U14  (8 U samples)
-             * val[1] = Y0, Y2, Y4, Y6, Y8, Y10, Y12, Y14  (8 Y even samples)
-             * val[2] = V0, V2, V4, V6, V8, V10, V12, V14  (8 V samples)
-             * val[3] = Y1, Y3, Y5, Y7, Y9, Y11, Y13, Y15  (8 Y odd samples)
-             */
-            uint8x8x4_t raw = vld4_u8(s);
-            vst1_u8(u, raw.val[0]);
-            vst1_u8(v, raw.val[2]);
+            /* Process 16 pixels (32 bytes UYVY: 16 Y, 8 U, 8 V) per iteration using ARM NEON */
+            for (; col <= width - 16; col += 16) {
+                /* vld4_u8 deinterleaves:
+                 * val[0] = U0, U2, U4, U6, U8, U10, U12, U14  (8 U samples)
+                 * val[1] = Y0, Y2, Y4, Y6, Y8, Y10, Y12, Y14  (8 Y even samples)
+                 * val[2] = V0, V2, V4, V6, V8, V10, V12, V14  (8 V samples)
+                 * val[3] = Y1, Y3, Y5, Y7, Y9, Y11, Y13, Y15  (8 Y odd samples)
+                 */
+                uint8x8x4_t raw = vld4_u8(s);
+                vst1_u8(u, raw.val[0]);
+                vst1_u8(v, raw.val[2]);
 
-            /* Re-interleave Y0, Y1, Y2, Y3... into contiguous Y plane */
-            uint8x8x2_t y_pair = {raw.val[1], raw.val[3]};
-            vst2_u8(y, y_pair);
+                /* Re-interleave Y0, Y1, Y2, Y3... into contiguous Y plane */
+                uint8x8x2_t y_pair = {raw.val[1], raw.val[3]};
+                vst2_u8(y, y_pair);
 
-            s += 32;
-            y += 16;
-            u += 8;
-            v += 8;
-        }
+                s += 32;
+                y += 16;
+                u += 8;
+                v += 8;
+            }
 #endif
-        /* Scalar fallback for remaining pixels or non-ARM architectures */
-        for (; col < width; col += 2) {
-            *u++ = s[0];  /* U  */
-            *y++ = s[1];  /* Y0 */
-            *v++ = s[2];  /* V  */
-            *y++ = s[3];  /* Y1 */
-            s += 4;
+            /* Scalar fallback for remaining pixels or non-ARM architectures */
+            for (; col < width; col += 2) {
+                *u++ = s[0];  /* U  */
+                *y++ = s[1];  /* Y0 */
+                *v++ = s[2];  /* V  */
+                *y++ = s[3];  /* Y1 */
+                s += 4;
+            }
+        } else {
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+            /* Process 16 pixels (32 bytes YUYV: 16 Y, 8 U, 8 V) per iteration using ARM NEON */
+            for (; col <= width - 16; col += 16) {
+                /* vld4_u8 deinterleaves YUYV:
+                 * val[0] = Y0, Y2, Y4, Y6, Y8, Y10, Y12, Y14  (8 Y even samples)
+                 * val[1] = U0, U2, U4, U6, U8, U10, U12, U14  (8 U samples)
+                 * val[2] = Y1, Y3, Y5, Y7, Y9, Y11, Y13, Y15  (8 Y odd samples)
+                 * val[3] = V0, V2, V4, V6, V8, V10, V12, V14  (8 V samples)
+                 */
+                uint8x8x4_t raw = vld4_u8(s);
+                vst1_u8(u, raw.val[1]);
+                vst1_u8(v, raw.val[3]);
+
+                uint8x8x2_t y_pair = {raw.val[0], raw.val[2]};
+                vst2_u8(y, y_pair);
+
+                s += 32;
+                y += 16;
+                u += 8;
+                v += 8;
+            }
+#endif
+            for (; col < width; col += 2) {
+                *y++ = s[0];  /* Y0 */
+                *u++ = s[1];  /* U  */
+                *y++ = s[2];  /* Y1 */
+                *v++ = s[3];  /* V  */
+                s += 4;
+            }
         }
     }
 }
 
 void JpegEncoder::uyvy_to_yuv422p(const uint8_t* src, int width, int height) {
-    uyvy_to_yuv422p_buffer(src, yuv_buf_, width, height);
+    uyvy_to_yuv422p_buffer(src, yuv_buf_, width, height, swap_uv_, yuyv_order_);
 }
 
 /* ── encode ────────────────────────────────────────────────────────── */

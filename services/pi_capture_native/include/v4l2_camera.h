@@ -77,15 +77,18 @@ public:
     const std::string& subdev_node() const { return subdev_node_; }
 
     /**
-     * Controls exposure, gain, and 50Hz power-line anti-flicker on OV5640 subdev:
-     * - Always enables 50Hz anti-flicker (Vietnam grid) to prevent horizontal banding.
-     * - lock_30fps = true: caps shutter exposure (default 350 lines <= 984) and
-     *   applies moderate manual gain (default 48, avoiding purple/overexposed saturation)
-     *   so OV5640 AEC never stretches VBLANK down to 15 FPS indoor.
+     * Controls exposure, gain, AWB, and 50Hz power-line anti-flicker on OV5640 subdev:
+     * - Always enables 50Hz anti-flicker (Vietnam grid) and Auto White Balance (AWB).
+     * - lock_30fps = true: sets shutter exposure to a 50Hz-aligned value (default 600 lines = 20ms,
+     *   exact 2x multiple of 10ms 100Hz light cycle) and keeps hardware AGC enabled (or applies
+     *   bounded manual_gain if > 0) so image is bright, flicker-free, and maintains 25-30 FPS.
      * - lock_30fps = false: restores automatic exposure (AEC) and automatic gain (AGC),
      *   unless manual_exposure > 0 is explicitly specified.
      */
     void set_exposure_mode(bool lock_30fps, int manual_exposure = -1, int manual_gain = -1);
+
+    /** Sets manual Red/Blue white balance gains (disables AWB when red_bal > 0 or blue_bal > 0). */
+    void set_white_balance_gains(int red_bal, int blue_bal);
 
     /**
      * Reads current exposure (shutter lines) and gain from /dev/v4l-subdev0

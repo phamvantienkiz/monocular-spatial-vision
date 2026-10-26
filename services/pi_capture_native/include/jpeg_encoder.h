@@ -20,19 +20,26 @@
 class JpegEncoder {
 public:
     /**
-     * @param quality  JPEG quality 1-100 (recommended 60-70 for streaming).
+     * @param quality     JPEG quality 1-100 (recommended 60-70 for streaming).
+     * @param swap_uv     If true, swaps U (Cb) and V (Cr) chroma planes during de-interleave.
+     * @param yuyv_order  If true, treats input bytes as [Y0 U0 Y1 V0] (YUYV) instead of [U0 Y0 V0 Y1] (UYVY).
      */
-    explicit JpegEncoder(int quality = 65);
+    explicit JpegEncoder(int quality = 65, bool swap_uv = false, bool yuyv_order = false);
     ~JpegEncoder();
 
     JpegEncoder(const JpegEncoder&) = delete;
     JpegEncoder& operator=(const JpegEncoder&) = delete;
 
+    void set_swap_uv(bool swap_uv)       { swap_uv_ = swap_uv; }
+    void set_yuyv_order(bool yuyv_order) { yuyv_order_ = yuyv_order; }
+    bool swap_uv() const                 { return swap_uv_; }
+    bool yuyv_order() const              { return yuyv_order_; }
+
     /**
-     * Converts a UYVY frame to planar YUV422P (using ARM NEON SIMD) and
+     * Converts a UYVY/YUYV frame to planar YUV422P (using ARM NEON SIMD) and
      * compresses to JPEG via tjCompressFromYUV.
      *
-     * @param uyvy_data   Input frame in UYVY format (width * height * 2 bytes).
+     * @param uyvy_data   Input frame in UYVY/YUYV format (width * height * 2 bytes).
      * @param width       Frame width in pixels.
      * @param height      Frame height in pixels.
      * @param[out] jpeg_buf   Internal or newly-allocated buffer holding JPEG bytes.
@@ -48,18 +55,21 @@ public:
     /** Frees a buffer previously returned by encode() (no-op if using reusable internal pool). */
     void free_buffer(uint8_t* buf);
 
-    /** Static helper exposed for unit testing UYVY -> YUV422P conversion. */
+    /** Static helper exposed for unit testing UYVY/YUYV -> YUV422P conversion. */
     static void uyvy_to_yuv422p_buffer(const uint8_t* src, uint8_t* dst_yuv422p,
-                                       int width, int height);
+                                       int width, int height,
+                                       bool swap_uv = false, bool yuyv_order = false);
 
 private:
     void ensure_buffers(int width, int height);
     void uyvy_to_yuv422p(const uint8_t* src, int width, int height);
 
-    tjhandle handle_       = nullptr;
-    int      quality_      = 65;
-    uint8_t* yuv_buf_      = nullptr;
-    size_t   yuv_buf_cap_  = 0;
-    uint8_t* jpeg_buf_     = nullptr;
+    tjhandle handle_        = nullptr;
+    int      quality_       = 65;
+    bool     swap_uv_       = false;
+    bool     yuyv_order_    = false;
+    uint8_t* yuv_buf_       = nullptr;
+    size_t   yuv_buf_cap_   = 0;
+    uint8_t* jpeg_buf_      = nullptr;
     unsigned long jpeg_cap_ = 0;
 };

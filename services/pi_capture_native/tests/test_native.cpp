@@ -106,6 +106,12 @@ static void test_uyvy_deinterleave_and_jpeg_encode() {
     TEST_CHECK(u_plane[0] == 90);
     TEST_CHECK(v_plane[0] == 140);
 
+    /* Test swap_uv = true (zero-overhead pointer swap for blue/red cast correction) */
+    JpegEncoder::uyvy_to_yuv422p_buffer(uyvy.data(), planar.data(), w, h, true, false);
+    TEST_CHECK(y_plane[0] == 180 && y_plane[1] == 200);
+    TEST_CHECK(u_plane[0] == 140);
+    TEST_CHECK(v_plane[0] == 90);
+
     JpegEncoder encoder(70);
     uint8_t* jpeg_buf = nullptr;
     unsigned long jpeg_size = 0;
