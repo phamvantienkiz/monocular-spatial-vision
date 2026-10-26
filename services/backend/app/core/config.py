@@ -3,7 +3,7 @@
 Reads environment variables from .env and system configs.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
@@ -28,9 +28,7 @@ class Settings(BaseSettings):
     calib_config_path: str = Field(default="configs/calib_pcam5c.yaml", alias="CALIB_CONFIG_PATH")
     enable_imu_tilt_compensation: bool = Field(default=True, alias="ENABLE_IMU_TILT_COMPENSATION")
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

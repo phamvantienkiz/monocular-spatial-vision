@@ -65,7 +65,7 @@ flowchart LR
   4. Kiểm tra IMU: Chạy `python tools/pi/test_imu.py`, terminal in liên tục góc pitch $\theta$, roll $\phi$; nghiêng board bằng tay thấy góc đổi mượt mà.
 - **Kiểm chứng Stream gói tin (Trước khi có Jetson):**
   - Developer khởi động script `tools/laptop/mock_ingest_server.py` ngay trên **Laptop**.
-  - Pi 3 stream gói tin nhị phân (Header 36 bytes + ảnh JPEG) qua mạng LAN về IP Laptop.
+  - Pi 3 stream gói tin nhị phân (Header 40 bytes `>HHIQffIIII` + ảnh JPEG) qua mạng Wi-Fi hoặc cáp Ethernet (Hub Type-C) về IP Laptop.
   - Trên màn hình Laptop, cửa sổ OpenCV/Web lập tức hiện video 30 FPS kèm chỉ số góc nghiêng IMU và bộ đếm rớt gói (Packet Drop Counter). Khi đạt chuẩn, mới chuyển đích stream sang Jetson.
 
 ### Câu hỏi 2: Phía Xử lý Trung tâm trên Jetson AGX Xavier — Dev ở đâu, test model bằng gì?

@@ -6,7 +6,23 @@ device:
   width: 1280
   height: 720
   fps: 30
-  pixel_format: "MJPG"  # Options: MJPG, YUYV
+  pixel_format: "UYVY"  # Options: UYVY (native for Pcam 5C), YUYV, MJPG
+  vflip: true           # Vertical flip for OV5640 BSI sensor array
+  rotate_180: false     # Hardware logo/text is upright, only vertical flip needed
+  use_hardware_flip: true # Enable on-chip OV5640 hardware vertical flip
+  buffer_size: 4        # V4L2 MMAP DMA ring buffer count (>= 4 prevents bcm2835-unicam dummy_buf drops)
+  exposure: null        # Optional manual shutter cap (lines, e.g. 400) to eliminate indoor motion blur; null = auto
+  preview_width: 640    # Preview downscale width for smooth Wi-Fi stream (exact 2x2 decimation from 1280)
+  preview_height: 360   # Preview downscale height (16:9 nHD, exact 2x2 decimation from 720)
+  preview_quality: 65   # Fast JPEG quality for Wi-Fi streaming
+
+optimization:
+  use_hardware_flip: true
+  jpeg_backend: "turbojpeg"  # Prioritize PyTurboJPEG (ARM NEON) with OpenCV fallback
+  jpeg_quality: 70           # Optimal balance between visual fidelity and stream latency
+  enable_threading: true     # Decoupled Producer-Consumer capture pipeline (multi-core)
+  encoder_workers: 3         # Parallel thread-local TurboJPEG worker threads across Pi 3 Cortex-A53 cores
+  target_resolution: "1280x720" # Native HD sensor mode (rock-solid MIPI CSI-2, zero artifacts)
 
 imu:
   i2c_bus: 1
@@ -17,5 +33,6 @@ stream:
   # Target IP address (Developer Laptop during Phase 3, or Jetson AGX during Phase 5)
   target_host: "192.168.1.20"
   target_port: 9876
+  jpeg_quality: 70
   reconnect_delay_sec: 2.0
   max_reconnect_attempts: -1  # -1 = infinite retry
