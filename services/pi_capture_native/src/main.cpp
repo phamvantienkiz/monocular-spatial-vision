@@ -176,7 +176,8 @@ static void run_stream(const std::string& device, int width, int height,
                        int fps, bool rotate_180, bool vflip_only, int buf_count,
                        int jpeg_quality, const std::string& host, int port,
                        int imu_bus, int imu_addr,
-                       bool lock_30fps, int exposure, int gain) {
+                       bool lock_30fps, int exposure, int gain,
+                       int red_bal, int blue_bal) {
     /* Camera */
     V4l2Camera cam(device, width, height, fps, rotate_180, buf_count, vflip_only);
     if (!cam.open()) {
@@ -184,6 +185,9 @@ static void run_stream(const std::string& device, int width, int height,
         return;
     }
     cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        cam.set_white_balance_gains(red_bal, blue_bal);
+    }
 
     /* IMU (best-effort, same as Python) */
     ImuReader imu(imu_bus, imu_addr);
@@ -282,13 +286,17 @@ static void run_stream(const std::string& device, int width, int height,
 static void run_snapshot(const std::string& device, int width, int height,
                          int fps, bool rotate_180, bool vflip_only, int buf_count,
                          int jpeg_quality, const std::string& output_path,
-                         bool lock_30fps, int exposure, int gain) {
+                         bool lock_30fps, int exposure, int gain,
+                         int red_bal, int blue_bal) {
     V4l2Camera cam(device, width, height, fps, rotate_180, buf_count, vflip_only);
     if (!cam.open()) {
         LOG_ERROR("Failed to open camera for snapshot.");
         return;
     }
     cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        cam.set_white_balance_gains(red_bal, blue_bal);
+    }
 
     /* Warm-up (allow AEC/AWB to settle) */
     for (int i = 0; i < 10 && g_running.load(); ++i) {
@@ -357,6 +365,12 @@ static std::mutex              g_prev_mutex;
 static std::condition_variable g_prev_cv;
 static PreviewFrame            g_prev_frame;
 static std::atomic<int>        g_active_http_clients{0};
+static V4l2Camera*             g_preview_cam = nullptr;
+static std::atomic<int>        g_cur_exposure{600};
+static std::atomic<int>        g_cur_gain{32};
+static std::atomic<int>        g_cur_red_bal{1400};
+static std::atomic<int>        g_cur_blue_bal{1200};
+static std::atomic<bool>       g_manual_wb{false};
 
 static bool http_send_all(int fd, const void* buf, size_t len) {
     const uint8_t* p = static_cast<const uint8_t*>(buf);
@@ -444,15 +458,17 @@ static void handle_http_client(int client_fd) {
             h      = g_prev_frame.height;
             seq    = g_prev_frame.seq;
         }
-        char json[448];
+        char json[512];
         snprintf(json, sizeof(json),
                  "{\"frame_id\":%llu,\"pitch_deg\":%.2f,\"roll_deg\":%.2f,\"fps\":%.1f,"
                  "\"exposure\":%d,\"gain\":%d,\"width\":%d,\"height\":%d,"
-                 "\"swap_uv\":%s,\"yuyv\":%s}",
+                 "\"swap_uv\":%s,\"yuyv\":%s,\"red_bal\":%d,\"blue_bal\":%d,\"manual_wb\":%s}",
                  static_cast<unsigned long long>(seq), p, r, f, exp_v, gain_v, w, h,
                  g_swap_uv.load() ? "true" : "false",
-                 g_yuyv_order.load() ? "true" : "false");
-        char resp[704];
+                 g_yuyv_order.load() ? "true" : "false",
+                 g_cur_red_bal.load(), g_cur_blue_bal.load(),
+                 g_manual_wb.load() ? "true" : "false");
+        char resp[768];
         snprintf(resp, sizeof(resp),
                  "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
                  "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
@@ -468,6 +484,56 @@ static void handle_http_client(int client_fd) {
         bool next = !g_yuyv_order.load();
         g_yuyv_order.store(next);
         LOG_INFO("[PREVIEW] Toggled byte order --yuyv = %s", next ? "YUYV" : "UYVY");
+        const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
+        http_send_all(client_fd, ok_resp, strlen(ok_resp));
+    } else if (strstr(req, "GET /adj-exp?d=")) {
+        const char* p = strstr(req, "GET /adj-exp?d=");
+        int delta = p ? atoi(p + 15) : 0;
+        int next_exp = g_cur_exposure.load() + delta;
+        if (next_exp < 50)  next_exp = 50;
+        if (next_exp > 984) next_exp = 984;
+        g_cur_exposure.store(next_exp);
+        if (g_preview_cam) {
+            g_preview_cam->set_exposure_mode(true, next_exp, g_cur_gain.load());
+        }
+        const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
+        http_send_all(client_fd, ok_resp, strlen(ok_resp));
+    } else if (strstr(req, "GET /adj-gain?d=")) {
+        const char* p = strstr(req, "GET /adj-gain?d=");
+        int delta = p ? atoi(p + 16) : 0;
+        int next_gain = g_cur_gain.load() + delta;
+        if (next_gain < 16)  next_gain = 16;
+        if (next_gain > 248) next_gain = 248;
+        g_cur_gain.store(next_gain);
+        if (g_preview_cam) {
+            g_preview_cam->set_exposure_mode(true, g_cur_exposure.load(), next_gain);
+        }
+        const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
+        http_send_all(client_fd, ok_resp, strlen(ok_resp));
+    } else if (strstr(req, "GET /adj-wb?")) {
+        const char* pr = strstr(req, "dr=");
+        const char* pb = strstr(req, "db=");
+        int dr = pr ? atoi(pr + 3) : 0;
+        int db = pb ? atoi(pb + 3) : 0;
+        if (strstr(req, "auto=1")) {
+            g_manual_wb.store(false);
+            if (g_preview_cam) {
+                g_preview_cam->set_exposure_mode(true, g_cur_exposure.load(), g_cur_gain.load());
+            }
+        } else {
+            int nr = g_cur_red_bal.load() + dr;
+            int nb = g_cur_blue_bal.load() + db;
+            if (nr < 256)  nr = 256;
+            if (nr > 4095) nr = 4095;
+            if (nb < 256)  nb = 256;
+            if (nb > 4095) nb = 4095;
+            g_cur_red_bal.store(nr);
+            g_cur_blue_bal.store(nb);
+            g_manual_wb.store(true);
+            if (g_preview_cam) {
+                g_preview_cam->set_white_balance_gains(nr, nb);
+            }
+        }
         const char* ok_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}";
         http_send_all(client_fd, ok_resp, strlen(ok_resp));
     } else if (strstr(req, "GET /snapshot.jpg")) {
@@ -521,13 +587,22 @@ static void handle_http_client(int client_fd) {
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Camera FPS</div><div class=\"hud-val\" id=\"val-fps\">-- FPS</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Resolution</div><div class=\"hud-val\" id=\"val-res\">--</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Exposure / Gain</div><div class=\"hud-val\" id=\"val-exp\">-- / --</div></div>\n"
+            "      <div class=\"hud-stat\"><div class=\"hud-label\">White Balance (R/B)</div><div class=\"hud-val\" id=\"val-wb\">AUTO</div></div>\n"
             "      <div class=\"hud-stat\"><div class=\"hud-label\">Chroma Mode</div><div class=\"hud-val\" id=\"val-uv\">UYVY (Normal)</div></div>\n"
-            "      <div class=\"hud-stat\"><div class=\"hud-label\">Pitch Angle</div><div class=\"hud-val\" id=\"val-pitch\">-- deg</div></div>\n"
-            "      <div class=\"hud-stat\"><div class=\"hud-label\">Roll Angle</div><div class=\"hud-val\" id=\"val-roll\">-- deg</div></div>\n"
+            "      <div class=\"hud-stat\"><div class=\"hud-label\">Pitch / Roll</div><div class=\"hud-val\" id=\"val-pitch\">-- / --</div></div>\n"
             "    </div>\n"
             "    <div class=\"btn-row\">\n"
-            "      <button onclick=\"fetch('/toggle-uv')\">🔄 Toggle Swap U/V (Fix Blue/Red Cast)</button>\n"
-            "      <button onclick=\"fetch('/toggle-yuyv')\">🔀 Toggle UYVY / YUYV Byte Order</button>\n"
+            "      <button onclick=\"fetch('/adj-exp?d=-50')\">🔉 Exp -50</button>\n"
+            "      <button onclick=\"fetch('/adj-exp?d=50')\">🔆 Exp +50</button>\n"
+            "      <button onclick=\"fetch('/adj-gain?d=-8')\">🔉 Gain -8</button>\n"
+            "      <button onclick=\"fetch('/adj-gain?d=8')\">🔆 Gain +8</button>\n"
+            "      <button onclick=\"fetch('/adj-wb?dr=-100&db=0')\">🔴 Red -100</button>\n"
+            "      <button onclick=\"fetch('/adj-wb?dr=100&db=0')\">🔴 Red +100</button>\n"
+            "      <button onclick=\"fetch('/adj-wb?dr=0&db=-100')\">🔵 Blue -100</button>\n"
+            "      <button onclick=\"fetch('/adj-wb?dr=0&db=100')\">🔵 Blue +100</button>\n"
+            "      <button onclick=\"fetch('/adj-wb?auto=1')\">✨ AWB Auto</button>\n"
+            "      <button onclick=\"fetch('/toggle-uv')\">🔄 Swap U/V</button>\n"
+            "      <button onclick=\"fetch('/toggle-yuyv')\">🔀 UYVY/YUYV</button>\n"
             "    </div>\n"
             "  </div>\n"
             "  <script>\n"
@@ -538,12 +613,12 @@ static void handle_http_client(int client_fd) {
             "      try {\n"
             "        const res = await fetch('/telemetry');\n"
             "        const data = await res.json();\n"
-            "        document.getElementById('val-pitch').innerText = `${data.pitch_deg > 0 ? '+' : ''}${data.pitch_deg.toFixed(2)}°`;\n"
-            "        document.getElementById('val-roll').innerText = `${data.roll_deg > 0 ? '+' : ''}${data.roll_deg.toFixed(2)}°`;\n"
+            "        document.getElementById('val-pitch').innerText = `${data.pitch_deg.toFixed(1)}° / ${data.roll_deg.toFixed(1)}°`;\n"
             "        document.getElementById('val-fps').innerText = `${data.fps.toFixed(1)} FPS`;\n"
             "        document.getElementById('val-res').innerText = `${data.width}x${data.height}`;\n"
             "        document.getElementById('val-exp').innerText = `${data.exposure} / ${data.gain}`;\n"
-            "        document.getElementById('val-uv').innerText = `${data.yuyv ? 'YUYV' : 'UYVY'} ${data.swap_uv ? '(Swap UV)' : '(Normal)'}`;\n"
+            "        document.getElementById('val-wb').innerText = data.manual_wb ? `R:${data.red_bal} B:${data.blue_bal}` : 'AUTO';\n"
+            "        document.getElementById('val-uv').innerText = `${data.yuyv ? 'YUYV' : 'UYVY'} ${data.swap_uv ? '(Swap)' : ''}`;\n"
             "      } catch (e) {} finally { inFlight = false; }\n"
             "    }, 250);\n"
             "  </script>\n"
@@ -564,13 +639,23 @@ static void handle_http_client(int client_fd) {
 static void run_preview(const std::string& device, int width, int height,
                         int fps, bool rotate_180, bool vflip_only, int buf_count,
                         int jpeg_quality, int preview_port, int imu_bus, int imu_addr,
-                        bool lock_30fps, int exposure, int gain) {
+                        bool lock_30fps, int exposure, int gain,
+                        int red_bal, int blue_bal) {
     V4l2Camera cam(device, width, height, fps, rotate_180, buf_count, vflip_only);
     if (!cam.open()) {
         LOG_ERROR("Failed to open camera for preview.");
         return;
     }
+    g_preview_cam = &cam;
+    if (exposure > 0) g_cur_exposure.store(exposure);
+    if (gain > 0)     g_cur_gain.store(gain);
     cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        if (red_bal > 0)  g_cur_red_bal.store(red_bal);
+        if (blue_bal > 0) g_cur_blue_bal.store(blue_bal);
+        g_manual_wb.store(true);
+        cam.set_white_balance_gains(g_cur_red_bal.load(), g_cur_blue_bal.load());
+    }
 
     ImuReader imu(imu_bus, imu_addr);
     ImuReader* imu_ptr = nullptr;
@@ -716,6 +801,7 @@ static void run_preview(const std::string& device, int width, int height,
         usleep(50000);
     }
 
+    g_preview_cam = nullptr;
     cam.close();
     imu.close();
     LOG_INFO("Preview server shut down.");
@@ -935,10 +1021,12 @@ static void print_usage(const char* prog) {
         "  --buffers N       V4L2 MMAP buffer count (default: 4)\n"
         "  --rotate-180      Enable hardware HFLIP+VFLIP on OV5640\n"
         "  --vflip           Enable hardware VFLIP only on OV5640\n"
-        "  --lock-30fps      Balanced 25-30 FPS shutter lock (20ms 50Hz-aligned + Auto-Gain & AWB)\n"
-        "  --exposure N      Manual exposure shutter lines <= 984 (default: 600 @ 30fps / 500 @ 25fps with --lock-30fps)\n"
-        "  --gain N          Manual gain value (default: auto-gain ON, even with --lock-30fps)\n"
-        "  --swap-uv         Swap U (Cb) and V (Cr) chroma planes (fixes blue/red color inversion)\n"
+        "  --lock-30fps      Balanced 25-30 FPS shutter lock (exposure=600 [20ms], gain=32)\n"
+        "  --exposure N      Manual exposure shutter lines <= 984 (default: 600 with --lock-30fps)\n"
+        "  --gain N          Manual gain value (default: 32 with --lock-30fps)\n"
+        "  --red-balance N   Manual Red WB gain 256-4095 (disables AWB to fix color cast)\n"
+        "  --blue-balance N  Manual Blue WB gain 256-4095 (disables AWB to fix color cast)\n"
+        "  --swap-uv         Swap U (Cb) and V (Cr) chroma planes\n"
         "  --yuyv            Interpret sensor byte order as YUYV instead of UYVY\n"
         "\n"
         "Stream options:\n"
@@ -972,6 +1060,8 @@ int main(int argc, char* argv[]) {
     bool        lock_30fps   = false;
     int         exposure     = -1;
     int         gain         = -1;
+    int         red_bal      = -1;
+    int         blue_bal     = -1;
     std::string host         = "192.168.1.20";
     int         port         = 9876;
     int         preview_port = 8080;
@@ -993,6 +1083,8 @@ int main(int argc, char* argv[]) {
         {"lock-30fps",   no_argument,       nullptr, 'L'},
         {"exposure",     required_argument, nullptr, 'E'},
         {"gain",         required_argument, nullptr, 'G'},
+        {"red-balance",  required_argument, nullptr, 'R'},
+        {"blue-balance", required_argument, nullptr, 'C'},
         {"swap-uv",      no_argument,       nullptr, 'U'},
         {"yuyv",         no_argument,       nullptr, 'Y'},
         {"host",         required_argument, nullptr, 'h'},
@@ -1008,7 +1100,7 @@ int main(int argc, char* argv[]) {
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:B:rVLE:G:UYh:p:P:o:n:b:a:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "m:d:W:H:f:q:B:rVLE:G:R:C:UYh:p:P:o:n:b:a:", long_opts, nullptr)) != -1) {
         switch (c) {
             case 'm': mode   = optarg; break;
             case 'd': device = optarg; break;
@@ -1022,6 +1114,8 @@ int main(int argc, char* argv[]) {
             case 'L': lock_30fps = true; break;
             case 'E': exposure   = atoi(optarg); break;
             case 'G': gain       = atoi(optarg); break;
+            case 'R': red_bal    = atoi(optarg); break;
+            case 'C': blue_bal   = atoi(optarg); break;
             case 'U': g_swap_uv.store(true); break;
             case 'Y': g_yuyv_order.store(true); break;
             case 'h': host   = optarg; break;
@@ -1038,11 +1132,10 @@ int main(int argc, char* argv[]) {
     }
 
     /* Balanced --lock-30fps defaults:
-     * - exposure = 20ms (600 lines @ 30fps, 500 lines @ 25fps) -> +71% brighter & 50Hz flicker-free!
-     * - gain     = -1 (keep hardware AGC & AWB active so white balance never turns blue/purple!) */
-    if (lock_30fps && exposure < 0) {
-        exposure = (fps > 0 && fps <= 30) ? (fps * 20) : 600;
-    }
+     * - exposure = 600 lines (20.0ms @ 30fps timing) -> +71% brighter than 350!
+     * - gain     = 32 (clean 2.0x analog gain; required because ov5640.c couples AEC/AGC in reg 0x3503) */
+    if (lock_30fps && exposure < 0) exposure = 600;
+    if (lock_30fps && gain < 0)     gain     = 32;
 
     /* Install signal handlers */
     signal(SIGINT,  signal_handler);
@@ -1053,14 +1146,14 @@ int main(int argc, char* argv[]) {
     if (mode == "preview") {
         run_preview(device, width, height, fps, rotate_180, vflip_only, buffers,
                     quality, preview_port, imu_bus, imu_addr,
-                    lock_30fps, exposure, gain);
+                    lock_30fps, exposure, gain, red_bal, blue_bal);
     } else if (mode == "stream") {
         run_stream(device, width, height, fps, rotate_180, vflip_only, buffers,
                    quality, host, port, imu_bus, imu_addr,
-                   lock_30fps, exposure, gain);
+                   lock_30fps, exposure, gain, red_bal, blue_bal);
     } else if (mode == "snapshot") {
         run_snapshot(device, width, height, fps, rotate_180, vflip_only, buffers,
-                     quality, output, lock_30fps, exposure, gain);
+                     quality, output, lock_30fps, exposure, gain, red_bal, blue_bal);
     } else if (mode == "diag") {
         return run_diag(device, width, height, fps, rotate_180, vflip_only, buffers,
                         imu_bus, imu_addr, lock_30fps, exposure, gain);

@@ -378,10 +378,14 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
     struct v4l2_control ctrl{};
 
     if (lock_30fps || manual_exposure > 0) {
-        /* Compute 20ms (2x 100Hz flicker period) anti-banding default based on target FPS:
-         * 600 lines @ 30fps (~20.0ms), 500 lines @ 25fps (~20.0ms) */
-        int default_20ms_lines = (fps_ > 0 && fps_ <= 30) ? (fps_ * 20) : 600;
-        int exp_val = (manual_exposure > 0) ? manual_exposure : default_20ms_lines;
+        /* Note on OV5640 kernel driver (ov5640.c):
+         * ov5640_try_frame_interval() snaps any requested FPS <= 22 to 15 FPS (1 line = 66.67 us),
+         * and any requested FPS >= 23 (such as 25 or 30) to the 30 FPS register table (1 line = 33.33 us).
+         * Therefore, in both --fps 25 and --fps 30, 1 shutter line is ~33.33 us!
+         *  - 300 lines = 10.0 ms (1x 100Hz light cycle)
+         *  - 600 lines = 20.0 ms (2x 100Hz light cycles -> balanced brightness)
+         *  - 900 lines = 30.0 ms (3x 100Hz light cycles -> max flicker-free brightness) */
+        int exp_val = (manual_exposure > 0) ? manual_exposure : 600;
         if (exp_val > 984) exp_val = 984; /* OV5640 VTS=1000 max shutter limit */
 
         /* Switch to manual exposure */
@@ -398,29 +402,23 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
             LOG_WARN("Failed to set exposure=%d: %s", exp_val, strerror(errno));
         }
 
-        if (manual_gain > 0) {
-            /* Disable auto gain only when user explicitly requests a manual gain */
-            ctrl.id    = V4L2_CID_AUTOGAIN;
-            ctrl.value = 0;
-            xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
+        int gain_val = (manual_gain > 0) ? manual_gain : 32;
+        /* In ov5640.c, V4L2_CID_EXPOSURE_MANUAL requires manual gain or explicit gain update
+         * because AEC/AGC share register 0x3503. Defaulting to clean gain=32 (2.0x) boosts
+         * brightness gently without noise or color saturation. */
+        ctrl.id    = V4L2_CID_AUTOGAIN;
+        ctrl.value = 0;
+        xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
 
+        ctrl.id    = V4L2_CID_ANALOGUE_GAIN;
+        ctrl.value = gain_val;
+        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
             ctrl.id    = V4L2_CID_GAIN;
-            ctrl.value = manual_gain;
-            if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0) {
-                ctrl.id    = V4L2_CID_ANALOGUE_GAIN;
-                ctrl.value = manual_gain;
-                xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
-            }
-            LOG_INFO("Exposure locked (exposure=%d lines [~20ms 50Hz-aligned], manual gain=%d, AWB=ON)",
-                     exp_val, manual_gain);
-        } else {
-            /* Keep hardware AGC enabled so OV5640 adapts gain & AWB smoothly without purple tint */
-            ctrl.id    = V4L2_CID_AUTOGAIN;
-            ctrl.value = 1;
+            ctrl.value = gain_val;
             xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
-            LOG_INFO("Balanced shutter lock active (exposure=%d lines [~20ms 50Hz-aligned], autogain=ON, AWB=ON)",
-                     exp_val);
         }
+        LOG_INFO("Balanced shutter lock active (exposure=%d lines [~%.1fms], gain=%d, AWB=ON)",
+                 exp_val, exp_val * 0.03333, gain_val);
     } else {
         /* Default: Auto-exposure + Auto-gain + AWB + 50Hz anti-flicker */
         ctrl.id    = V4L2_CID_EXPOSURE_AUTO;
@@ -508,6 +506,18 @@ SensorExposureInfo V4l2Camera::query_exposure_gain() const {
         ctrl.id = V4L2_CID_AUTOGAIN;
         if (xioctl(target_fd, VIDIOC_G_CTRL, &ctrl) == 0)
             info.autogain = ctrl.value;
+
+        ctrl.id = V4L2_CID_AUTO_WHITE_BALANCE;
+        if (xioctl(target_fd, VIDIOC_G_CTRL, &ctrl) == 0)
+            info.awb = ctrl.value;
+
+        ctrl.id = V4L2_CID_RED_BALANCE;
+        if (xioctl(target_fd, VIDIOC_G_CTRL, &ctrl) == 0)
+            info.red_bal = ctrl.value;
+
+        ctrl.id = V4L2_CID_BLUE_BALANCE;
+        if (xioctl(target_fd, VIDIOC_G_CTRL, &ctrl) == 0)
+            info.blue_bal = ctrl.value;
     }
 
     if (subdev_fd >= 0) {

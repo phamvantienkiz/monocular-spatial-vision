@@ -31,6 +31,9 @@ struct SensorExposureInfo {
     int gain          = -1;
     int auto_exposure = -1;
     int autogain      = -1;
+    int awb           = -1;
+    int red_bal       = -1;
+    int blue_bal      = -1;
 };
 
 class V4l2Camera {
