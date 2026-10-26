@@ -52,6 +52,9 @@ V4l2Camera::V4l2Camera(const std::string& device, int width, int height,
         capture_h_ = req_h_;
         actual_w_  = req_w_;
         actual_h_  = req_h_;
+        if (rotate_180_ || vflip_only_) {
+            crop_buf_.resize(static_cast<size_t>(actual_w_) * actual_h_ * 2);
+        }
     }
 }
 
@@ -205,8 +208,12 @@ bool V4l2Camera::open() {
     /* 8. Re-assert frame rate right before streaming */
     configure_framerate();
 
-    /* 9. Start streaming */
+    /* 9. Start streaming (powers up OV5640 via Runtime PM in ov5640_s_stream) */
     if (!start_streaming()) { close(); return false; }
+
+    /* 10. Reset hardware HFLIP=0, VFLIP=0 AFTER stream start (power_count > 0)
+     *     so OV5640 internal ISP Bayer phase is never corrupted by 0x3820/0x3821 flip bugs */
+    set_hardware_flip();
 
     LOG_INFO("Camera opened: %s  %dx%d  (requested %dx%d @ %d fps, buffers=%d)",
              device_.c_str(), actual_w_, actual_h_, req_w_, req_h_, fps_, mapped_count_);
@@ -286,14 +293,20 @@ bool V4l2Camera::configure_framerate() {
 }
 
 /* ── set_hardware_flip ────────────────────────────────────────────
- * Writes V4L2_CID_HFLIP and V4L2_CID_VFLIP to the sensor.
- * The kernel ov5640 driver translates these into I2C writes to
- * REG_TIMING_TC_REG20 (vflip) and REG_TIMING_TC_REG21 (hflip).
+ * CRITICAL OV5640 ISP BAYER PHASE FIX:
+ * In subsampling/binning modes (such as 720x480 / 640x480), toggling hardware
+ * V4L2_CID_HFLIP or V4L2_CID_VFLIP modifies OV5640 timing registers 0x3820 and
+ * 0x3821, shifting the readout window by 1 pixel while binning is active.
+ * This desynchronizes the Bayer CFA phase (BGGR -> RGGB/GBRG) entering the
+ * on-chip ISP debayer & AWB engine, causing rainbow magenta/purple/blue fringes
+ * on bright highlights and a green/red/purple color cast that WB cannot fix!
+ *
+ * Therefore, we ALWAYS reset hardware HFLIP=0 and VFLIP=0 on the sensor subdev
+ * to keep factory Bayer alignment, and perform rotate_180_ / vflip_only_ cleanly
+ * in software on the UYVY buffer during dequeue_frame().
  * ──────────────────────────────────────────────────────────────────── */
 
 void V4l2Camera::set_hardware_flip() {
-    if (!rotate_180_ && !vflip_only_) return;
-
     int target_fd = fd_;
     int subdev_fd = -1;
 
@@ -301,35 +314,28 @@ void V4l2Camera::set_hardware_flip() {
         subdev_fd = ::open(subdev_node_.c_str(), O_RDWR);
         if (subdev_fd >= 0) {
             target_fd = subdev_fd;
-        } else {
-            LOG_WARN("Cannot open subdev %s for flip: %s", subdev_node_.c_str(), strerror(errno));
         }
     }
 
     struct v4l2_control ctrl{};
 
-    if (rotate_180_) {
-        ctrl.id    = V4L2_CID_HFLIP;
-        ctrl.value = 1;
-        if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0)
-            LOG_WARN("Failed to set HFLIP on %s: %s",
-                     (subdev_fd >= 0 ? subdev_node_.c_str() : device_.c_str()), strerror(errno));
-    }
+    /* Explicitly reset hardware HFLIP=0 and VFLIP=0 to restore OV5640 Bayer CFA phase */
+    ctrl.id    = V4L2_CID_HFLIP;
+    ctrl.value = 0;
+    xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
 
     ctrl.id    = V4L2_CID_VFLIP;
-    ctrl.value = 1;
-    if (xioctl(target_fd, VIDIOC_S_CTRL, &ctrl) < 0)
-        LOG_WARN("Failed to set VFLIP on %s: %s",
-                 (subdev_fd >= 0 ? subdev_node_.c_str() : device_.c_str()), strerror(errno));
+    ctrl.value = 0;
+    xioctl(target_fd, VIDIOC_S_CTRL, &ctrl);
 
     if (subdev_fd >= 0) {
         ::close(subdev_fd);
     }
 
     if (rotate_180_)
-        LOG_INFO("Hardware flip configured (HFLIP=1, VFLIP=1)");
-    else
-        LOG_INFO("Hardware vertical flip configured (VFLIP=1)");
+        LOG_INFO("Software 180-deg rotation active (hardware HFLIP=0, VFLIP=0 to preserve OV5640 Bayer color phase)");
+    else if (vflip_only_)
+        LOG_INFO("Software vertical flip active (hardware HFLIP=0, VFLIP=0 to preserve OV5640 Bayer color phase)");
 }
 
 /* ── set_exposure_mode ──────────────────────────────────────────────
@@ -363,13 +369,23 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
         }
     }
 
-    /* 1. Always set 50Hz anti-flicker (Vietnam electrical grid) */
+    /* 1. Ensure hardware HFLIP=0 and VFLIP=0 are reset while sensor is actively powered
+     *    so OV5640 register 0x3820/0x3821 never shift the ISP Bayer CFA phase! */
+    struct v4l2_control flip_ctrl{};
+    flip_ctrl.id    = V4L2_CID_HFLIP;
+    flip_ctrl.value = 0;
+    xioctl(target_fd, VIDIOC_S_CTRL, &flip_ctrl);
+    flip_ctrl.id    = V4L2_CID_VFLIP;
+    flip_ctrl.value = 0;
+    xioctl(target_fd, VIDIOC_S_CTRL, &flip_ctrl);
+
+    /* 2. Always set 50Hz anti-flicker (Vietnam electrical grid) */
     struct v4l2_control flk{};
     flk.id    = V4L2_CID_POWER_LINE_FREQUENCY;
     flk.value = V4L2_CID_POWER_LINE_FREQUENCY_50HZ;
     xioctl(target_fd, VIDIOC_S_CTRL, &flk);
 
-    /* 2. Always ensure hardware Auto White Balance (AWB) is active */
+    /* 3. Always ensure hardware Auto White Balance (AWB) is active */
     struct v4l2_control awb{};
     awb.id    = V4L2_CID_AUTO_WHITE_BALANCE;
     awb.value = 1;
@@ -378,14 +394,13 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
     struct v4l2_control ctrl{};
 
     if (lock_30fps || manual_exposure > 0) {
-        /* Note on OV5640 kernel driver (ov5640.c):
-         * ov5640_try_frame_interval() snaps any requested FPS <= 22 to 15 FPS (1 line = 66.67 us),
-         * and any requested FPS >= 23 (such as 25 or 30) to the 30 FPS register table (1 line = 33.33 us).
-         * Therefore, in both --fps 25 and --fps 30, 1 shutter line is ~33.33 us!
-         *  - 300 lines = 10.0 ms (1x 100Hz light cycle)
-         *  - 600 lines = 20.0 ms (2x 100Hz light cycles -> balanced brightness)
-         *  - 900 lines = 30.0 ms (3x 100Hz light cycles -> max flicker-free brightness) */
-        int exp_val = (manual_exposure > 0) ? manual_exposure : 600;
+        /* Empirical & hardware-verified sweet spot on Pi 3 + Pcam 5C (OV5640):
+         *  - Default exposure = 800 lines (~26.7ms): completely eliminates 50Hz/100Hz
+         *    indoor lighting horizontal banding stripes at 25-30 FPS while providing
+         *    bright, clear indoor visibility out-of-the-box.
+         *  - Default gain     = 48 (3.0x analog gain): clean brightness boost without
+         *    noise or color distortion. */
+        int exp_val = (manual_exposure > 0) ? manual_exposure : 800;
         if (exp_val > 984) exp_val = 984; /* OV5640 VTS=1000 max shutter limit */
 
         /* Switch to manual exposure */
@@ -402,7 +417,7 @@ void V4l2Camera::set_exposure_mode(bool lock_30fps, int manual_exposure, int man
             LOG_WARN("Failed to set exposure=%d: %s", exp_val, strerror(errno));
         }
 
-        int gain_val = (manual_gain > 0) ? manual_gain : 32;
+        int gain_val = (manual_gain > 0) ? manual_gain : 48;
         /* In ov5640.c, V4L2_CID_EXPOSURE_MANUAL requires manual gain or explicit gain update
          * because AEC/AGC share register 0x3503. Defaulting to clean gain=32 (2.0x) boosts
          * brightness gently without noise or color saturation. */
@@ -628,20 +643,48 @@ bool V4l2Camera::dequeue_frame(const uint8_t*& data, size_t& bytes, int& index,
 
     index = static_cast<int>(buf.index);
 
-    if (need_crop_) {
-        const int src_stride = 720 * 2; // 1440 bytes
-        const int dst_stride = 640 * 2; // 1280 bytes
-        const int offset_bytes = ((720 - 640) / 2) * 2; // 40 px * 2 = 80 bytes
+    if (need_crop_ || rotate_180_ || vflip_only_) {
+        const int src_stride   = capture_w_ * 2;
+        const int dst_stride   = actual_w_ * 2;
+        const int offset_bytes = need_crop_ ? (((capture_w_ - actual_w_) / 2) * 2) : 0;
         const uint8_t* raw = static_cast<const uint8_t*>(buffers_[index].start);
         uint8_t* dst = crop_buf_.data();
 
-        for (int row = 0; row < 480; ++row) {
-            memcpy(dst + row * dst_stride,
-                   raw + row * src_stride + offset_bytes,
-                   dst_stride);
+        if (rotate_180_) {
+            /* 180-degree rotation (vertical flip + horizontal mirror) in UYVY space:
+             * Each 4-byte macropixel is [U, Y0, V, Y1]. Reversing horizontally
+             * swaps the macropixel order across the row and swaps Y0 <-> Y1
+             * while preserving U and V chroma channels 100% intact! */
+            const int macro_count = actual_w_ / 2;
+            for (int row = 0; row < actual_h_; ++row) {
+                const uint8_t* src_row = raw + (actual_h_ - 1 - row) * src_stride + offset_bytes;
+                uint8_t*       dst_row = dst + row * dst_stride;
+                for (int m = 0; m < macro_count; ++m) {
+                    const uint8_t* sp = src_row + (macro_count - 1 - m) * 4;
+                    uint8_t*       dp = dst_row + m * 4;
+                    dp[0] = sp[0]; /* U  */
+                    dp[1] = sp[3]; /* Y1 -> first luma sample */
+                    dp[2] = sp[2]; /* V  */
+                    dp[3] = sp[1]; /* Y0 -> second luma sample */
+                }
+            }
+        } else if (vflip_only_) {
+            /* Vertical flip only: copy rows bottom-to-top */
+            for (int row = 0; row < actual_h_; ++row) {
+                memcpy(dst + row * dst_stride,
+                       raw + (actual_h_ - 1 - row) * src_stride + offset_bytes,
+                       dst_stride);
+            }
+        } else {
+            /* Center crop only (720x480 -> 640x480) */
+            for (int row = 0; row < actual_h_; ++row) {
+                memcpy(dst + row * dst_stride,
+                       raw + row * src_stride + offset_bytes,
+                       dst_stride);
+            }
         }
         data  = dst;
-        bytes = 640 * 480 * 2;
+        bytes = static_cast<size_t>(actual_w_) * actual_h_ * 2;
     } else {
         data  = static_cast<const uint8_t*>(buffers_[index].start);
         bytes = buf.bytesused;

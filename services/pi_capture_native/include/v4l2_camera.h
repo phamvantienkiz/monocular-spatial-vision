@@ -43,9 +43,9 @@ public:
      * @param width       Desired capture width  (default 1280).
      * @param height      Desired capture height (default 720).
      * @param fps         Desired frame rate     (default 30).
-     * @param rotate_180  If true, sets V4L2 HFLIP+VFLIP on the sensor (zero CPU cost).
+     * @param rotate_180  If true, rotates 180° in software (resets hardware HFLIP/VFLIP to avoid OV5640 Bayer phase bug).
      * @param buf_count   Number of V4L2 mmap buffers (4 recommended for bcm2835-unicam).
-     * @param vflip_only  If true (and rotate_180 is false), sets V4L2_CID_VFLIP=1.
+     * @param vflip_only  If true (and rotate_180 is false), flips vertically in software.
      */
     V4l2Camera(const std::string& device, int width, int height,
                int fps, bool rotate_180, int buf_count = 4, bool vflip_only = false);

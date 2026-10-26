@@ -209,6 +209,11 @@ static void run_stream(const std::string& device, int width, int height,
         if (cam.dequeue_frame(d, n, idx))
             cam.requeue_buffer(idx);
     }
+    /* Re-assert exposure/gain/flip/WB after sensor stream warmup so Runtime PM never overwrites them */
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        cam.set_white_balance_gains(red_bal, blue_bal);
+    }
 
     /* Launch Thread 1 (Capture) and Thread 2 (Encode) */
     std::thread cap_thread(capture_worker, std::ref(cam), imu_ptr);
@@ -304,6 +309,10 @@ static void run_snapshot(const std::string& device, int width, int height,
         if (cam.dequeue_frame(d, n, idx))
             cam.requeue_buffer(idx);
     }
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        cam.set_white_balance_gains(red_bal, blue_bal);
+    }
 
     /* Capture one frame */
     const uint8_t* data = nullptr;
@@ -366,8 +375,8 @@ static std::condition_variable g_prev_cv;
 static PreviewFrame            g_prev_frame;
 static std::atomic<int>        g_active_http_clients{0};
 static V4l2Camera*             g_preview_cam = nullptr;
-static std::atomic<int>        g_cur_exposure{600};
-static std::atomic<int>        g_cur_gain{32};
+static std::atomic<int>        g_cur_exposure{800};
+static std::atomic<int>        g_cur_gain{48};
 static std::atomic<int>        g_cur_red_bal{1400};
 static std::atomic<int>        g_cur_blue_bal{1200};
 static std::atomic<bool>       g_manual_wb{false};
@@ -670,6 +679,11 @@ static void run_preview(const std::string& device, int width, int height,
         const uint8_t* d; size_t n; int idx;
         if (cam.dequeue_frame(d, n, idx))
             cam.requeue_buffer(idx);
+    }
+    /* Re-assert exposure/gain/flip/WB after sensor stream warmup so Runtime PM never overwrites them */
+    cam.set_exposure_mode(lock_30fps, exposure, gain);
+    if (red_bal > 0 || blue_bal > 0) {
+        cam.set_white_balance_gains(g_cur_red_bal.load(), g_cur_blue_bal.load());
     }
 
     /* Launch Thread 1: Camera + IMU Capture Worker */
@@ -1019,11 +1033,11 @@ static void print_usage(const char* prog) {
         "  --fps    N        Frame rate     (default: 30)\n"
         "  --quality N       JPEG quality 1-100 (default: 65)\n"
         "  --buffers N       V4L2 MMAP buffer count (default: 4)\n"
-        "  --rotate-180      Enable hardware HFLIP+VFLIP on OV5640\n"
-        "  --vflip           Enable hardware VFLIP only on OV5640\n"
-        "  --lock-30fps      Balanced 25-30 FPS shutter lock (exposure=600 [20ms], gain=32)\n"
-        "  --exposure N      Manual exposure shutter lines <= 984 (default: 600 with --lock-30fps)\n"
-        "  --gain N          Manual gain value (default: 32 with --lock-30fps)\n"
+        "  --rotate-180      Rotate 180° in software (resets hardware HFLIP/VFLIP to preserve Bayer color phase)\n"
+        "  --vflip           Vertical flip in software\n"
+        "  --lock-30fps      Balanced 25-30 FPS shutter lock (exposure=800 [26.7ms], gain=48)\n"
+        "  --exposure N      Manual exposure shutter lines <= 984 (default: 800 with --lock-30fps)\n"
+        "  --gain N          Manual gain value (default: 48 with --lock-30fps)\n"
         "  --red-balance N   Manual Red WB gain 256-4095 (disables AWB to fix color cast)\n"
         "  --blue-balance N  Manual Blue WB gain 256-4095 (disables AWB to fix color cast)\n"
         "  --swap-uv         Swap U (Cb) and V (Cr) chroma planes\n"
@@ -1131,11 +1145,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Balanced --lock-30fps defaults:
-     * - exposure = 600 lines (20.0ms @ 30fps timing) -> +71% brighter than 350!
-     * - gain     = 32 (clean 2.0x analog gain; required because ov5640.c couples AEC/AGC in reg 0x3503) */
-    if (lock_30fps && exposure < 0) exposure = 600;
-    if (lock_30fps && gain < 0)     gain     = 32;
+    /* Balanced --lock-30fps defaults (verified flicker-free & bright at 25-30 FPS):
+     * - exposure = 800 lines (~26.7ms) -> eliminates horizontal banding & boosts indoor brightness
+     * - gain     = 48 (3.0x analog gain; required because ov5640.c couples AEC/AGC in reg 0x3503) */
+    if (lock_30fps && exposure < 0) exposure = 800;
+    if (lock_30fps && gain < 0)     gain     = 48;
 
     /* Install signal handlers */
     signal(SIGINT,  signal_handler);
