@@ -1,0 +1,436 @@
+/**
+ * Component Styles — Soft Clean Cards
+ * Specification: docs/views/main/design-system.md
+ */
+
+/* 1. Core Card Component */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+  }
+}
+
+.card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Sub-region inside card (no nested cards!) */
+.card-subtle-box {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 2. Hero Numbers & Visuals */
+.metric-hero {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.metric-hero .unit {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* 3. Metric Row (3 columns) */
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.metric-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.metric-col .metric-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.metric-col .metric-value {
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.metric-col .metric-unit {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+@media (max-width: 480px) {
+  .metric-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
+/* 4. Segmented Control */
+.segmented {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--border-hairline);
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.segmented::-webkit-scrollbar {
+  display: none;
+}
+
+.segmented-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  font-weight: 400;
+  transition: all var(--transition-tab);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.segmented-btn:hover {
+  color: var(--text-primary);
+}
+
+.segmented-btn[aria-selected="true"],
+.segmented-btn.active {
+  background: #ffffff;
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: var(--shadow-control);
+}
+
+/* 5. Buttons */
+.btn-primary {
+  background: var(--ink);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-primary);
+  text-decoration: none;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-primary:hover {
+  background: var(--ink-hover);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: var(--radius-full);
+  background: #ffffff;
+  border: none;
+  box-shadow: var(--shadow-control);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+/* Invisible 44px touch target */
+.btn-icon::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+}
+
+.btn-icon:hover {
+  background: var(--bg-subtle);
+}
+
+.btn-icon:active {
+  transform: scale(0.96);
+}
+
+.btn-ghost-details {
+  background: var(--bg-subtle);
+  border: none;
+  border-radius: var(--radius-md);
+  height: 44px;
+  padding: 0 var(--space-4);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast);
+}
+
+.btn-ghost-details:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+
+.btn-ghost-details .chevron {
+  transition: transform var(--transition-expand);
+}
+
+.btn-ghost-details.expanded .chevron {
+  transform: rotate(180deg);
+}
+
+/* 6. Status Pills & Badges */
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hairline);
+}
+
+.badge-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.badge-success {
+  background: rgba(31, 166, 58, 0.08);
+  color: var(--data-4);
+  border-color: rgba(31, 166, 58, 0.2);
+}
+.badge-success .dot {
+  background: var(--data-4);
+}
+
+.badge-active {
+  background: rgba(31, 95, 255, 0.08);
+  color: var(--data-1);
+  border-color: rgba(31, 95, 255, 0.2);
+}
+.badge-active .dot {
+  background: var(--data-1);
+}
+
+.badge-warning {
+  background: rgba(255, 138, 31, 0.08);
+  color: var(--data-3);
+  border-color: rgba(255, 138, 31, 0.2);
+}
+.badge-warning .dot {
+  background: var(--data-3);
+}
+
+.badge-purple {
+  background: rgba(177, 59, 240, 0.08);
+  color: var(--data-2);
+  border-color: rgba(177, 59, 240, 0.2);
+}
+.badge-purple .dot {
+  background: var(--data-2);
+}
+
+/* 7. Legend List */
+.legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-name {
+  color: var(--text-primary);
+  flex-grow: 1;
+}
+
+.legend-val {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-feature-settings: "tnum" 1;
+}
+
+/* 8. Collapsible Detail Section */
+.collapsible-content {
+  display: none;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.collapsible-content.open {
+  display: block;
+  animation: fadeIn var(--transition-expand);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 9. Soft Clean Table */
+.clean-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+  background: #ffffff;
+}
+
+.clean-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.clean-table th {
+  background: var(--bg-subtle);
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.clean-table td {
+  padding: 14px 16px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-hairline);
+  vertical-align: middle;
+}
+
+.clean-table tr:last-child td {
+  border-bottom: none;
+}
+
+.clean-table tr:hover td {
+  background: var(--bg-subtle-hover);
+}
+
+/* 10. Modal / Slide-over Drawer */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 20, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-fast);
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-box {
+  background: #ffffff;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 16px 48px rgba(16, 16, 24, 0.16);
+  width: 90%;
+  max-width: 720px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  transform: scale(0.96);
+  transition: transform var(--transition-fast);
+}
+
+.modal-overlay.active .modal-box {
+  transform: scale(1);
+}
